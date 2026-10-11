@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0e13">
+  <title>CompanionDeck</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo"></span>
+        <span class="brand-name">CompanionDeck</span>
+      </div>
+      <div class="top-right">
+        <span id="statusDot" class="dot" title="连接状态"></span>
+        <span id="connText" class="conn-text">连接中…</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="card">
+        <label class="card-label">控制对象</label>
+        <select id="adapterSelect" class="select"></select>
+        <div id="adapterDesc" class="hint"></div>
+        <div id="profileRow" class="chips hidden"></div>
+      </section>
+
+      <section id="npCard" class="card hidden">
+        <div class="np-status" id="npStatus">—</div>
+        <div class="np-title" id="npTitle">未在播放</div>
+        <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+        <div class="time-info" id="timeInfo"></div>
+      </section>
+
+      <section id="transportCard" class="card transport hidden">
+        <button id="btnPrev" class="t-btn" data-action="prev" title="上一首">⏮</button>
+        <button id="btnPlay" class="t-btn big" data-action="play_pause" title="播放/暂停">▶</button>
+        <button id="btnNext" class="t-btn" data-action="next" title="下一首">⏭</button>
+        <button id="btnStop" class="t-btn" data-action="stop" title="停止">⏹</button>
+      </section>
+
+      <section id="volumeCard" class="card volume hidden">
+        <button id="btnMute" class="t-btn small" data-action="toggle_mute" title="静音">🔇</button>
+        <button id="btnVolDown" class="t-btn small" data-action="volume_down" title="音量-">−</button>
+        <input id="volumeSlider" class="slider" type="range" min="0" max="100" value="50">
+        <span id="volumeLabel" class="volume-label">--</span>
+        <button id="btnVolUp" class="t-btn small" data-action="volume_up" title="音量+">+</button>
+      </section>
+
+      <section id="soundsCard" class="card hidden">
+        <h2 class="card-label">声音面板</h2>
+        <div id="soundsGrid" class="grid"></div>
+      </section>
+
+      <section id="tracksCard" class="card hidden">
+        <h2 class="card-label">声音列表</h2>
+        <input id="trackFilter" class="filter" type="search" placeholder="筛选声音…">
+        <ul id="trackList" class="track-list"></ul>
+      </section>
+    </main>
+
+    <footer class="foot">CompanionDeck · 局域网伴侣操控台</footer>
+  </div>
+
+  <div id="tokenModal" class="modal hidden">
+    <div class="modal-box">
+      <h2>需要访问口令</h2>
+      <p>在电脑终端窗口的提示里找到「访问口令」，输入后连接。</p>
+      <input id="tokenInput" class="filter" type="text" placeholder="访问口令" autocomplete="off">
+      <button id="btnTokenOk" class="btn-primary">连接</button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

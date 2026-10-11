@@ -1,0 +1,57 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8390
+  },
+  "auth": {
+    "enabled": true,
+    "token": "首次运行自动生成，也可手动填写"
+  },
+  "active_adapter": "soundpad",
+  "adapters": {
+    "soundpad": {
+      "enabled": true,
+      "sounds": [
+        {
+          "id": "cfg-0",
+          "name": "大笑",
+          "kind": "hotkey",
+          "index": null,
+          "hotkey": ["ctrl", "alt", "1"]
+        }
+      ]
+    },
+    "mediakeys": {
+      "enabled": true
+    },
+    "profile": {
+      "enabled": true,
+      "active_profile": "Spotify",
+      "profiles": [
+        {
+          "name": "Spotify",
+          "description": "桌面版 Spotify 全局快捷键",
+          "hotkeys": {
+            "play_pause": ["ctrl", "alt", "p"],
+            "next": ["ctrl", "alt", "n"],
+            "prev": ["ctrl", "alt", "b"],
+            "stop": ["ctrl", "alt", "s"],
+            "volume_up": ["ctrl", "alt", "up"],
+            "volume_down": ["ctrl", "alt", "down"],
+            "toggle_mute": ["ctrl", "alt", "m"]
+          }
+        },
+        {
+          "name": "VLC",
+          "description": "VLC 媒体播放器全局快捷键示例",
+          "hotkeys": {
+            "play_pause": ["ctrl", "alt", "p"],
+            "next": ["ctrl", "alt", "right"],
+            "prev": ["ctrl", "alt", "left"],
+            "stop": ["ctrl", "alt", "s"]
+          }
+        }
+      ]
+    }
+  }
+}
