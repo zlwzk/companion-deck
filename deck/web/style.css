@@ -96,6 +96,21 @@ body {
 }
 .sound-btn:active { background: var(--accent-dim); border-color: var(--accent); transform: scale(0.96); }
 
+/* 分类分组 */
+.group + .group { margin-top: 8px; }
+.group-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 2px; background: none; border: none;
+  color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: 0.5px;
+  cursor: pointer; user-select: none;
+}
+.group-name { flex: 1; text-align: left; color: var(--text); }
+.group-count { font-size: 11px; color: var(--muted); background: var(--card-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+.group-caret { color: var(--muted); transition: transform 0.2s; }
+.group.collapsed .group-caret { transform: rotate(-90deg); }
+.group.collapsed .group-body { display: none; }
+.track-sublist { list-style: none; }
+
 .filter {
   width: 100%; padding: 10px 12px; margin-bottom: 10px;
   background: var(--card-2); color: var(--text);

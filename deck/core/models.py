@@ -24,6 +24,7 @@ class SoundButton(BaseModel):
     kind: str = "index"  # index | hotkey
     index: Optional[int] = None
     hotkey: list[str] = Field(default_factory=list)
+    category: Optional[str] = None  # 所属分类（自动生成时继承自声音列表）
 
 
 class AdapterInfo(BaseModel):

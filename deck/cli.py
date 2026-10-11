@@ -11,7 +11,7 @@ import uvicorn
 
 from deck import __app_name__, __version__
 from deck.config import CONFIG_PATH, load as load_config
-from deck.lan import lan_ips, tailscale_hostname, tailscale_ips
+from deck.lan import lan_ips, tailscale_hostname, tailscale_ips, zerotier_ips
 from deck.server import ServerApp
 
 
@@ -64,14 +64,17 @@ def main() -> None:
     for ip in lan_ips():
         print(f"  局域网访问 : http://{ip}:{port}   （手机需与电脑在同一网络）")
     ts_ips = tailscale_ips()
-    if ts_ips:
+    zt_ips = zerotier_ips()
+    if ts_ips or zt_ips:
         for ip in ts_ips:
             print(f"  互联网远程 : http://{ip}:{port}   （Tailscale，全球可访问）")
+        for ip in zt_ips:
+            print(f"  互联网远程 : http://{ip}:{port}   （ZeroTier，全球可访问）")
         hostname = tailscale_hostname()
         if hostname:
             print(f"  远程域名   : http://{hostname}:{port}   （Tailscale MagicDNS）")
     else:
-        print("  互联网远程 : 未检测到 Tailscale —— 如需外网控制，安装 Tailscale 后重启（详见 docs/SETUP.md）")
+        print("  互联网远程 : 未检测到 ZeroTier / Tailscale —— 如需外网控制，安装 ZeroTier 后重启（详见 docs/SETUP.md）")
     if token:
         print(f"  访问口令   : {token}")
         print("  手机打开页面后输入上方口令即可连接")

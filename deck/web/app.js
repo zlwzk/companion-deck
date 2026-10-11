@@ -119,22 +119,84 @@
     });
   }
 
+  /* ---------- 分组渲染（按分类归组 + 可折叠） ---------- */
+  function groupItems(arr, keyFn) {
+    var groups = [], byKey = {};
+    arr.forEach(function (it) {
+      var k = keyFn(it) || "";
+      if (!byKey[k]) { byKey[k] = []; groups.push({ key: k, items: byKey[k] }); }
+      byKey[k].push(it);
+    });
+    return groups;
+  }
+
+  function makeGroupHead(group) {
+    var head = document.createElement("button");
+    head.type = "button";
+    head.className = "group-head";
+    var name = document.createElement("span");
+    name.className = "group-name";
+    name.textContent = group.key;
+    var count = document.createElement("span");
+    count.className = "group-count";
+    count.textContent = group.items.length;
+    var caret = document.createElement("span");
+    caret.className = "group-caret";
+    caret.textContent = "▾";
+    head.appendChild(name); head.appendChild(count); head.appendChild(caret);
+    return head;
+  }
+
+  function buildGroup(group, bodyEl) {
+    var g = document.createElement("div");
+    g.className = "group";
+    var head = makeGroupHead(group);
+    head.addEventListener("click", function () { g.classList.toggle("collapsed"); });
+    g.appendChild(head);
+    g.appendChild(bodyEl);
+    return g;
+  }
+
   function renderSounds() {
     var card = $("soundsCard");
     var sounds = state.sounds || [];
     if (!sounds.length) { card.classList.add("hidden"); return; }
     card.classList.remove("hidden");
-    var grid = $("soundsGrid");
-    grid.innerHTML = "";
-    sounds.forEach(function (s) {
-      var btn = document.createElement("button");
-      btn.className = "sound-btn";
-      btn.textContent = s.name;
-      btn.addEventListener("click", function () {
-        api("/api/sound/play", { method: "POST", body: JSON.stringify({ id: s.id }) }).catch(showError);
+    var wrap = $("soundsWrap");
+    wrap.innerHTML = "";
+    groupItems(sounds, function (s) { return s.category || "未分类"; }).forEach(function (g) {
+      var body = document.createElement("div");
+      body.className = "grid group-body";
+      g.items.forEach(function (s) {
+        var btn = document.createElement("button");
+        btn.className = "sound-btn";
+        btn.textContent = s.name;
+        btn.addEventListener("click", function () {
+          api("/api/sound/play", { method: "POST", body: JSON.stringify({ id: s.id }) }).catch(showError);
+        });
+        body.appendChild(btn);
       });
-      grid.appendChild(btn);
+      wrap.appendChild(buildGroup(g, body));
     });
+  }
+
+  function makeTrackItem(t) {
+    var li = document.createElement("div");
+    li.className = "track-item";
+    var idx = document.createElement("span");
+    idx.className = "track-idx";
+    idx.textContent = t.index || "";
+    var name = document.createElement("span");
+    name.className = "track-name";
+    name.textContent = t.name;
+    var play = document.createElement("span");
+    play.className = "track-play";
+    play.textContent = "▶";
+    li.appendChild(idx); li.appendChild(name); li.appendChild(play);
+    li.addEventListener("click", function () {
+      api("/api/sound/play", { method: "POST", body: JSON.stringify({ id: String(t.index) }) }).catch(showError);
+    });
+    return li;
   }
 
   function renderTracks() {
@@ -147,29 +209,28 @@
     var list = $("trackList");
     list.innerHTML = "";
     var shown = 0;
-    tracks.forEach(function (t) {
-      if (kw && t.name && t.name.toLowerCase().indexOf(kw) < 0) return;
-      if (shown >= 300) return;
-      shown++;
-      var li = document.createElement("li");
-      li.className = "track-item";
-      var idx = document.createElement("span");
-      idx.className = "track-idx";
-      idx.textContent = t.index || "";
-      var name = document.createElement("span");
-      name.className = "track-name";
-      name.textContent = t.name;
-      var play = document.createElement("span");
-      play.className = "track-play";
-      play.textContent = "▶";
-      li.appendChild(idx); li.appendChild(name); li.appendChild(play);
-      li.addEventListener("click", function () {
-        api("/api/sound/play", { method: "POST", body: JSON.stringify({ id: String(t.index) }) }).catch(showError);
-      });
-      list.appendChild(li);
+    var filtered = tracks.filter(function (t) {
+      return !kw || (t.name && t.name.toLowerCase().indexOf(kw) >= 0);
     });
+    if (kw) {
+      // 搜索时平铺展示，便于快速定位
+      filtered.forEach(function (t) {
+        if (shown >= 300) return;
+        shown++;
+        list.appendChild(makeTrackItem(t));
+      });
+    } else {
+      // 默认按分类分组展示，可折叠
+      groupItems(filtered, function (t) { return t.category || "未分类"; }).forEach(function (g) {
+        if (shown >= 300) return;
+        var body = document.createElement("div");
+        body.className = "track-sublist group-body";
+        g.items.slice(0, 300 - shown).forEach(function (t) { body.appendChild(makeTrackItem(t)); shown++; });
+        list.appendChild(buildGroup(g, body));
+      });
+    }
     if (!shown) {
-      var empty = document.createElement("li");
+      var empty = document.createElement("div");
       empty.className = "track-item";
       empty.textContent = "（列表为空）";
       list.appendChild(empty);

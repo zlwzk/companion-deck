@@ -9,10 +9,11 @@ import subprocess
 from typing import Optional
 
 _TAILSCALE_NET = ipaddress.IPv4Network("100.64.0.0/10")
+_ZEROTIER_NET = ipaddress.IPv4Network("25.0.0.0/8")  # ZeroTier 默认管理网段
 
 
 def classify_ip(ip: str) -> str:
-    """返回地址类型：tailscale / lan / loopback / other。"""
+    """返回地址类型：tailscale / zerotier / lan / loopback / other。"""
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
@@ -21,6 +22,8 @@ def classify_ip(ip: str) -> str:
         return "loopback"
     if addr.version == 4 and addr in _TAILSCALE_NET:
         return "tailscale"
+    if addr.version == 4 and addr in _ZEROTIER_NET:
+        return "zerotier"
     if addr.is_private:  # 10.x / 172.16-31.x / 192.168.x
         return "lan"
     return "other"
@@ -60,6 +63,11 @@ def lan_ips() -> list[str]:
 def tailscale_ips() -> list[str]:
     """Tailscale 虚拟网（100.64.0.0/10）IPv4 地址列表，供互联网远程访问。"""
     return [ip for ip in _enum_ips() if classify_ip(ip) == "tailscale"]
+
+
+def zerotier_ips() -> list[str]:
+    """ZeroTier 虚拟网（25.0.0.0/8）IPv4 地址列表，供互联网远程访问。"""
+    return [ip for ip in _enum_ips() if classify_ip(ip) == "zerotier"]
 
 
 def _find_tailscale_cli() -> Optional[str]:

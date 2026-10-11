@@ -7,7 +7,7 @@
 - 目标软件：Soundpad（推荐，原生接口）；或任意有全局热键/媒体会话的软件
 - 控制端（手机/平板）与电脑的连通方式二选一：
   - **局域网**：同一 Wi-Fi / 同一路由器下
-  - **互联网**：通过 Tailscale 组网（推荐，见第 8 节），人在外面也能控制
+  - **互联网**：通过 ZeroTier（或 Tailscale）组网（推荐，见第 8 节），人在外面也能控制
 
 ## 2. 安装
 
@@ -44,7 +44,7 @@ py -3 -m venv .venv
 
 > 提示：首次运行会自动生成 `config.json`（含口令）。显示「未运行/不可用」说明 Soundpad 没在运行，启动 Soundpad 后刷新页面即可。
 >
-> 如果终端显示「未检测到 Tailscale」，说明电脑还没装 Tailscale，按第 8 节操作即可开启互联网远程。
+> 如果终端显示「未检测到 ZeroTier / Tailscale」，说明电脑还没装组网工具，按第 8 节操作即可开启互联网远程。
 
 ## 4. 手机连接（局域网）
 
@@ -117,40 +117,41 @@ netsh advfirewall firewall add rule name="CompanionDeck" dir=in action=allow pro
 ## 7. 安全说明
 
 - **访问口令默认开启**：即使暴露到互联网，没有口令也无法控制
-- 互联网远程**强烈推荐使用 Tailscale**：流量经 WireGuard 加密、设备间私有组网，不暴露公网端口
+- 互联网远程**推荐使用 ZeroTier（或 Tailscale）私有组网**：流量加密、设备间私有网络，不暴露公网端口
 - **不要**直接做路由器端口转发把 8390 暴露到公网——等于把控制入口挂到互联网上，风险高
 - `config.json` 含口令，已被 `.gitignore` 排除，**切勿提交仓库**
 
-## 8. 互联网远程控制（Tailscale）
+## 8. 互联网远程控制（ZeroTier）
 
-Tailscale 是基于 WireGuard 的私有组网工具：电脑和手机登录同一个账号后，就像在一个虚拟局域网里，**不要求同一 Wi-Fi、不需要公网 IP、不需要路由器设置**。
+ZeroTier 是私有虚拟组网工具：电脑和手机加入同一个网络后，就像处于一个虚拟局域网里，**不要求同一 Wi-Fi、不需要公网 IP、不需要路由器设置**，且邮箱注册即可、无需 Google 等第三方账号。
 
-### 8.1 安装与登录
+### 8.1 安装与加入网络
 
-1. **电脑端**：下载安装 [Tailscale](https://tailscale.com/download)（Windows），用你的账号（微软/谷歌/GitHub 均可）登录
-2. **手机端**：App Store / 应用商店搜索 **Tailscale**，安装后用**同一个账号**登录
-3. 两侧都登录后，在电脑 Tailscale 界面确认手机设备已出现（MagicDNS 默认开启）
+1. **电脑端**：下载安装 [ZeroTier](https://www.zerotier.com/download/)（Windows），安装后托盘图标出现
+2. **创建网络**：访问 [my.zerotier.com](https://my.zerotier.com) 注册账号 → 创建 Network（记下 16 位 Network ID），或加入别人创建的网络
+3. **电脑加入**：托盘图标 → Join Network → 输入 Network ID；在 my.zerotier.com 该网络页面勾选电脑的 **Auth?** 授权
+4. **手机端**：App Store / 应用商店安装 **ZeroTier One**，用同一账号登录，Join 同一个 Network ID，并在网页端授权手机设备
 
 ### 8.2 获取远程地址
 
-在电脑终端执行：
+电脑加入网络后会自动获得一个 `25.x.x.x` 地址。查看方式：
 
 ```bat
-tailscale ip -4
+:: 列出已加入网络及分配的 IP
+"C:\Program Files (x86)\ZeroTier One\zerotier-cli.exe" listnetworks
 ```
 
-会输出一个 `100.x.x.x` 地址。或者看 Tailscale 界面里电脑的名称（如 `mypc.tailnet.ts.net`）。
+或在 my.zerotier.com 网络页面看电脑设备旁显示的 IP（形如 `25.10.2.3`）。
 
 ### 8.3 启动并连接
 
 1. 照常启动 CompanionDeck，终端会显示：
 
    ```
-   互联网远程 : http://100.x.x.x:8390   （Tailscale，全球可访问）
-   远程域名   : http://mypc.tailnet.ts.net:8390   （Tailscale MagicDNS）
+   互联网远程 : http://25.x.x.x:8390   （ZeroTier，全球可访问）
    ```
 
-2. 手机（无论身在何处，只要有网）打开该地址，输入访问口令即可控制
+2. 手机（无论身在何处，只要有网且 ZeroTier 保持连接）打开该地址，输入访问口令即可控制
 
 > 同一时间局域网访问依然可用，两种方式互不影响。
 
@@ -158,10 +159,14 @@ tailscale ip -4
 
 | 现象 | 原因与解决 |
 | --- | --- |
-| 终端未显示「互联网远程」 | 电脑未装 Tailscale 或未登录；安装登录后重启 CompanionDeck |
-| 手机打不开远程地址 | 手机 Tailscale 未登录同一账号；手机没开 Tailscale（App 需保持连接状态） |
+| 终端未显示「互联网远程」 | 电脑未装 ZeroTier 或未加入网络/未授权；加入并授权后重启 CompanionDeck |
+| 手机打不开远程地址 | 手机 ZeroTier 未加入同一 Network ID 或未授权；App 需保持连接状态 |
+| 网页端看不到设备 | my.zerotier.com 网络页面勾选设备 **Auth?** 授权 |
 | 提示「需要访问口令」 | 输入终端显示的口令；远程场景下口令必须保留开启 |
-| 域名打不开但 IP 能开 | MagicDNS 未开启：Tailscale 管理后台 → DNS → 开启 MagicDNS |
+
+### 8.5 备选：Tailscale（若可用）
+
+如果所在网络能访问 [Tailscale](https://tailscale.com/download)，也可用 Tailscale 替代（WireGuard 私有组网，登录需 Google/微软/GitHub 账号）。安装登录后 CompanionDeck 会自动识别其 `100.x.x.x` 地址并在终端显示。ZeroTier 与 Tailscale 可共存，同时安装时终端会分别列出。
 
 ## 9. 常见问题排查（局域网 / 通用）
 

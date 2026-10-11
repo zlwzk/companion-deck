@@ -124,7 +124,7 @@ class MyAdapter(BaseAdapter):
 - 默认开启**访问口令**（Token）：首次运行自动生成，REST 用 Bearer Header，WebSocket 用查询参数，常量时间比较
 - 服务默认监听 `0.0.0.0:8390`，暴露于局域网；口令防止同一网络内他人误操作
 - `config.json` 含口令，已被 `.gitignore` 排除，**切勿提交仓库**
-- **互联网远程（Tailscale）**：流量经 WireGuard 加密、设备私有组网，不暴露公网端口，口令仍须保持开启
+- **互联网远程（ZeroTier / Tailscale）**：流量加密、设备私有组网，不暴露公网端口，口令仍须保持开启
 - 如需更强安全性：可将 host 改为 127.0.0.1 仅本机使用，或置于可信 VLAN 后
 
 ## 7. 验证方式

@@ -140,9 +140,11 @@ class SoundpadAdapter(BaseAdapter):
                     )
                 )
             return buttons
-        # 未配置时：从声音列表自动生成按钮（按索引播放）
+        # 未配置时：从声音列表自动生成按钮（按索引播放，保留分类）
         return [
-            SoundButton(id=str(t.index), name=t.name, kind="index", index=t.index)
+            SoundButton(
+                id=str(t.index), name=t.name, kind="index", index=t.index, category=t.category
+            )
             for t in tracks[:500]
         ]
 
@@ -155,7 +157,7 @@ class SoundpadAdapter(BaseAdapter):
             raise Unsupported
 
     def _parse_soundlist(self, xml_text: str) -> list[Track]:
-        """容错解析 GetSoundlist() 返回的 XML，兼容不同字段命名。"""
+        """容错解析 GetSoundlist() 返回的 XML，兼容不同字段命名，并按分类归组。"""
         if not xml_text or xml_text.startswith("R-"):
             return []
         tracks: list[Track] = []
@@ -164,12 +166,22 @@ class SoundpadAdapter(BaseAdapter):
         except ET.ParseError:
             return self._regex_soundlist(xml_text)
 
-        index = 1
-        for el in root.iter():
-            tag = el.tag.lower()
-            if tag == "sound" or (tag.endswith("sound") and "list" not in tag):
-                attrs = {k.lower(): v for k, v in (el.attrib or {}).items()}
-                name = attrs.get("name") or attrs.get("title") or (el.text or "").strip()
+        counter = [1]
+        self._walk_xml(root, None, tracks, counter)
+        if not tracks:
+            return self._regex_soundlist(xml_text)
+        return tracks
+
+    def _walk_xml(self, el, current_category: Optional[str], out: list, counter: list) -> None:
+        """递归遍历 XML：<Category> 记录当前分类，<Sound> 生成 Track（索引全局递增）。"""
+        for child in el:
+            tag = child.tag.lower()
+            attrs = {k.lower(): v for k, v in (child.attrib or {}).items()}
+            if "category" in tag:
+                name = attrs.get("name") or attrs.get("title") or (child.text or "").strip()
+                self._walk_xml(child, name or current_category, out, counter)
+            elif tag == "sound" or (tag.endswith("sound") and "list" not in tag):
+                name = attrs.get("name") or attrs.get("title") or (child.text or "").strip()
                 path = (
                     attrs.get("path")
                     or attrs.get("file")
@@ -177,18 +189,25 @@ class SoundpadAdapter(BaseAdapter):
                     or attrs.get("url")
                 )
                 if not name:
-                    for sub in el.iter():
+                    for sub in child.iter():
                         if sub.tag.lower() in ("name", "title"):
                             name = (sub.text or "").strip()
                             break
                 if not name and path:
                     name = Path(path).stem
-                tracks.append(Track(index=index, name=name or f"声音 {index}", path=path or None))
-                index += 1
-
-        if not tracks:
-            return self._regex_soundlist(xml_text)
-        return tracks
+                category = attrs.get("category") or attrs.get("cat") or current_category
+                out.append(
+                    Track(
+                        index=counter[0],
+                        name=name or f"声音 {counter[0]}",
+                        path=path or None,
+                        category=category or None,
+                    )
+                )
+                counter[0] += 1
+            else:
+                # 未知容器（如 <SoundList>、<Sounds>），继续向下找声音
+                self._walk_xml(child, current_category, out, counter)
 
     def _regex_soundlist(self, xml_text: str) -> list[Track]:
         entries = re.split(r"<(?:Sound|Entry)\b", xml_text, flags=re.IGNORECASE)[1:]

@@ -9,6 +9,12 @@ def test_classify_tailscale_range():
     assert classify_ip("100.127.255.254") == "tailscale"
 
 
+def test_classify_zerotier_range():
+    assert classify_ip("25.0.0.1") == "zerotier"
+    assert classify_ip("25.25.25.25") == "zerotier"
+    assert classify_ip("25.255.255.254") == "zerotier"
+
+
 def test_classify_lan_private_ranges():
     assert classify_ip("192.168.1.5") == "lan"
     assert classify_ip("10.0.0.1") == "lan"
