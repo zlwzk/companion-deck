@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import threading
 import webbrowser
 
@@ -10,12 +11,21 @@ import uvicorn
 
 from deck import __app_name__, __version__
 from deck.config import CONFIG_PATH, load as load_config
-from deck.lan import lan_ips
+from deck.lan import lan_ips, tailscale_hostname, tailscale_ips
 from deck.server import ServerApp
 
 
+def _port_in_use(port: int) -> bool:
+    try:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", port))
+            return False
+    except OSError:
+        return True
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="deck", description=f"{__app_name__} 局域网控制器")
+    parser = argparse.ArgumentParser(prog="deck", description=f"{__app_name__} 伴侣操控台")
     parser.add_argument("--port", type=int, default=None, help="监听端口（默认取配置）")
     parser.add_argument("--host", type=str, default=None, help="监听地址（默认 0.0.0.0）")
     parser.add_argument("--no-browser", action="store_true", help="启动后不打开浏览器")
@@ -30,6 +40,11 @@ def main() -> None:
     host = cfg["server"]["host"]
     port = int(cfg["server"]["port"])
 
+    if _port_in_use(port):
+        print(f"[{__app_name__}] 端口 {port} 已被占用：可能是上一个实例仍在运行（请先关闭旧窗口），或其他程序占用。")
+        print(f"[{__app_name__}] 可临时换端口启动：python -m deck --port 8391")
+        raise SystemExit(1)
+
     server_app = ServerApp(cfg, config_path=CONFIG_PATH)
     app = server_app.app
 
@@ -43,11 +58,20 @@ def main() -> None:
             soundpad_online = "未知"
 
     print("=" * 56)
-    print(f"  {__app_name__} v{__version__}  局域网伴侣操控台")
+    print(f"  {__app_name__} v{__version__}  伴侣操控台（局域网 / 互联网）")
     print("=" * 56)
     print(f"  本机访问   : http://127.0.0.1:{port}")
     for ip in lan_ips():
         print(f"  局域网访问 : http://{ip}:{port}   （手机需与电脑在同一网络）")
+    ts_ips = tailscale_ips()
+    if ts_ips:
+        for ip in ts_ips:
+            print(f"  互联网远程 : http://{ip}:{port}   （Tailscale，全球可访问）")
+        hostname = tailscale_hostname()
+        if hostname:
+            print(f"  远程域名   : http://{hostname}:{port}   （Tailscale MagicDNS）")
+    else:
+        print("  互联网远程 : 未检测到 Tailscale —— 如需外网控制，安装 Tailscale 后重启（详见 docs/SETUP.md）")
     if token:
         print(f"  访问口令   : {token}")
         print("  手机打开页面后输入上方口令即可连接")
