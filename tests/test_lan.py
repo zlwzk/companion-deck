@@ -16,6 +16,12 @@ def test_v4_hotspot_range():
     assert classify("192.168.136.1") == "lan"  # 相邻网段不算热点
 
 
+def test_v4_usb_tethering_range():
+    assert classify("192.168.42.129") == "usb"  # Android RNDIS 默认 PC 侧地址
+    assert classify("172.20.10.2") == "usb"  # iOS 热点/USB（NCM）默认 PC 侧地址
+    assert classify("192.168.43.1") == "lan"  # 相邻网段不算 USB
+
+
 def test_v4_public_and_loopback():
     assert classify("8.8.8.8") == "public"
     assert classify("114.114.114.114") == "public"

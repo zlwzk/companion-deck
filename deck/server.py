@@ -487,12 +487,16 @@ class ServerApp:
                 logger.debug("WebSocket 连接结束", exc_info=True)
 
     def _lan_url(self) -> Optional[str]:
-        """返回首选局域网访问 URL（端口取配置）。"""
+        """返回首选局域网访问 URL（端口取配置）。
+
+        优先级：电脑热点 > USB 共享 > 局域网 —— 手机只能在直连链路（热点/USB）
+        上稳定回访电脑；校园网等上游局域网地址会被 NAT/防火墙挡住，故排最后。
+        """
         try:
-            from deck.lan import lan_ips, hotspot_ips
+            from deck.lan import lan_ips, hotspot_ips, usb_ips
 
             port = int((self.cfg.get("server") or {}).get("port") or 8390)
-            for ip in lan_ips() + hotspot_ips():
+            for ip in hotspot_ips() + usb_ips() + lan_ips():
                 if ip:
                     return f"http://{ip}:{port}"
         except Exception:  # noqa: BLE001

@@ -12,6 +12,10 @@ import urllib.request
 from typing import Optional
 
 _HOTSPOT_NET = ipaddress.IPv4Network("192.168.137.0/24")  # Windows 移动热点默认网段
+_USB_NETS = [
+    ipaddress.IPv4Network("192.168.42.0/24"),  # Android USB 网络共享（RNDIS）默认网段
+    ipaddress.IPv4Network("172.20.10.0/28"),   # iOS 个人热点 / USB（NCM）默认网段
+]
 _TEREDO_NET = ipaddress.IPv6Network("2001:0000::/32")  # Teredo 隧道，非公网可直连
 _SIXTOFOUR_NET = ipaddress.IPv6Network("2002::/16")  # 6to4 隧道，非公网可直连
 _PUBLIC_IP_PROBES = [
@@ -22,7 +26,7 @@ _PUBLIC_IP_PROBES = [
 
 
 def classify(ip: str) -> str:
-    """返回地址类型：loopback / lan / hotspot / public / linklocal / ula / global6 / other。"""
+    """返回地址类型：loopback / usb / lan / hotspot / public / linklocal / ula / global6 / other。"""
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
@@ -32,6 +36,8 @@ def classify(ip: str) -> str:
     if addr.version == 4:
         if addr in _HOTSPOT_NET:
             return "hotspot"
+        if any(addr in n for n in _USB_NETS):
+            return "usb"
         if addr.is_private:  # 10.x / 172.16-31.x / 192.168.x
             return "lan"
         return "public"
@@ -84,6 +90,11 @@ def hotspot_ips() -> list[str]:
     return [ip for ip in _enum_addrs() if classify(ip) == "hotspot"]
 
 
+def usb_ips() -> list[str]:
+    """USB 网络共享网段 IPv4（手机插线共享后，手机可直接访问电脑）。"""
+    return [ip for ip in _enum_addrs() if classify(ip) == "usb"]
+
+
 def public_ips() -> list[str]:
     """本机直连的公网 IPv4（一般不会出现，除非网卡直接配置了公网地址）。"""
     return [ip for ip in _enum_addrs() if classify(ip) == "public"]
@@ -115,13 +126,17 @@ def detect_public_ipv4() -> Optional[str]:
 def urls_by_channel(port: int) -> list[dict]:
     """按使用通道聚合访问地址，供启动横幅展示。"""
     channels: list[dict] = []
-    for ip in lan_ips():
-        channels.append(
-            {"channel": "局域网", "url": f"http://{ip}:{port}", "hint": "手机连同一 Wi-Fi"}
-        )
     for ip in hotspot_ips():
         channels.append(
             {"channel": "电脑热点", "url": f"http://{ip}:{port}", "hint": "手机连电脑移动热点"}
+        )
+    for ip in usb_ips():
+        channels.append(
+            {"channel": "USB 共享", "url": f"http://{ip}:{port}", "hint": "手机开启 USB 网络共享后直连"}
+        )
+    for ip in lan_ips():
+        channels.append(
+            {"channel": "局域网", "url": f"http://{ip}:{port}", "hint": "手机连同一 Wi-Fi"}
         )
     for ip in global6_ips():
         channels.append(
