@@ -66,6 +66,8 @@ def main() -> None:
     parser.add_argument("--host", type=str, default=None, help="IPv4 回退监听地址（默认 0.0.0.0）")
     parser.add_argument("--no-browser", action="store_true", help="启动后不打开浏览器")
     parser.add_argument("--no-tray", action="store_true", help="不创建系统托盘图标")
+    parser.add_argument("--usb", action="store_true",
+                        help="USB 直连：自动执行 adb reverse，手机插线访问 http://127.0.0.1:端口（需 adb 与 USB 调试）")
     parser.add_argument("--autostart", choices=["on", "off", "status"], default=None,
                         help="管理开机自启：on=启用 / off=禁用 / status=查询")
     parser.add_argument("--cwd", type=str, default=None, help="开机自启时的工作目录（仅与 autostart on 配合使用）")
@@ -114,8 +116,23 @@ def main() -> None:
             soundpad_online = "未知"
 
     channels = urls_by_channel(port)
-    # 首选局域网地址（含 token）用于扫码
-    lan_url = next((c["url"] for c in channels if c["channel"] == "局域网"), None)
+
+    # ---------- USB 直连（adb reverse） ----------
+    usb_ok = False
+    usb_msg = ""
+    if args.usb:
+        from deck.adb import reverse as adb_reverse
+        usb_ok, usb_msg = adb_reverse(port)
+        if usb_ok:
+            channels.append(
+                {"channel": "USB 直连", "url": f"http://127.0.0.1:{port}",
+                 "hint": "手机浏览器直接打开（流量走数据线）"}
+            )
+
+    # 二维码首选地址：热点 / USB 直连 > 局域网（手机只能稳定回访直连链路）
+    direct = next((c for c in channels if c["channel"] in ("电脑热点", "USB 直连")), None)
+    qr_channel = direct or next((c for c in channels if c["channel"] == "局域网"), None)
+    lan_url = qr_channel["url"] if qr_channel else None
     qr_url = f"{lan_url}?token={token}" if lan_url and token else (lan_url or f"http://127.0.0.1:{port}")
 
     print("=" * 60)
@@ -123,7 +140,7 @@ def main() -> None:
     print("=" * 60)
     print(f"  本机访问   : http://127.0.0.1:{port}")
     for ch in channels:
-        marker = "★" if ch["channel"] == "局域网" else " "
+        marker = "★" if qr_channel and ch["url"] == qr_channel["url"] else " "
         print(f"  {marker} {ch['channel']} : {ch['url']}   （{ch['hint']}）")
     if token:
         print(f"  访问口令   : {token}")
@@ -131,6 +148,9 @@ def main() -> None:
     else:
         print("  访问口令   : 已关闭（auth.enabled = false）")
     print(f"  当前适配器 : {active.display_name if active else '无'}（{soundpad_online}）")
+    if args.usb:
+        state = "✔ " + usb_msg if usb_ok else "✘ " + usb_msg
+        print(f"  USB 直连   : {state}")
     autostart_state = "已启用" if autostart_enabled() else "未启用"
     tray_state = "已启用" if (tray_supported() and not args.no_tray) else "未启用"
     print(f"  系统托盘   : {tray_state}")
@@ -144,8 +164,9 @@ def main() -> None:
         print("连接方式速查（完整步骤见 docs/SETUP.md）：")
         print("  ① 同一 Wi-Fi     → 手机打开「局域网」地址，或扫上方的「扫码直连」二维码")
         print("  ② 打游戏时       → 手机连电脑「移动热点」→ 打开「电脑热点」地址")
+        print("  ③ 数据线直连     → 启动时加 --usb 参数（需 adb），手机浏览器打开 http://127.0.0.1:" + str(port))
         if any(ch["channel"] == "IPv6 直连" for ch in channels):
-            print("  ③ 人在外面       → 可选「IPv6 直连」地址（需在路由器放行；详见 SETUP.md）")
+            print("  ④ 人在外面       → 可选「IPv6 直连」地址（需在路由器放行；详见 SETUP.md）")
         # 终端打印二维码（如果安装了 qrcode）
         if lan_url:
             print()

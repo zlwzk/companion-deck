@@ -16,7 +16,8 @@
 - 🔔 **系统托盘**：最小化驻留，双击打开控制台
 - 🚀 **开机自启**：注册表方式，可一键开关
 - 📲 **PWA 支持**：可"安装"到手机桌面，体验接近原生 App
-- 📦 **单文件 exe**：24 MB，无需安装 Python，拷贝即用
+- � **USB 直连**：`--usb` 自动 adb reverse，数据线直连，绕过防火墙与校园网限制
+- �📦 **单文件 exe**：24 MB，无需安装 Python，拷贝即用
 
 👉 **Windows 用户直接 [下载 CompanionDeck.exe](../../releases/latest) 即可使用**；
 遇到问题欢迎提 [Issue](../../issues)。
