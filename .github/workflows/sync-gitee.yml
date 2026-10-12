@@ -18,6 +18,11 @@ on:
   schedule:
     - cron: "0 20 * * *" # UTC 20:00 = 北京时间 04:00
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "同步指定 tag 的 GitHub Release 到 Gitee（留空则只同步代码）"
+        required: false
+        default: ""
 
 jobs:
   code:
@@ -44,7 +49,7 @@ jobs:
           echo "::endgroup::"
 
   release-assets:
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
     needs: code
     runs-on: ubuntu-latest
     steps:
@@ -52,7 +57,7 @@ jobs:
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
           NAME: ${{ github.event.release.name }}
           BODY: ${{ github.event.release.body }}
           REPO_GH: ${{ github.repository }}
@@ -63,6 +68,11 @@ jobs:
           fi
           set -e
           API="https://gitee.com/api/v5/repos/zlwzk/companion-deck"
+          # 手动触发场景：从 GitHub Release 取名称与说明
+          if [ -z "$NAME" ]; then
+            NAME=$(gh release view "$TAG" --repo "$REPO_GH" --json name -q .name)
+            BODY=$(gh release view "$TAG" --repo "$REPO_GH" --json body -q .body)
+          fi
           # 幂等：该 tag 在 Gitee 已有 release 则复用，否则创建
           REL_ID=$(curl -sf "$API/releases/tags/$TAG?access_token=$GITEE_TOKEN" | jq -r '.id // empty' || true)
           if [ -z "$REL_ID" ]; then
