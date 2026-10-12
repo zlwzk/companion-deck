@@ -1,0 +1,83 @@
+name: Sync to Gitee
+
+# GitHub → Gitee 自动镜像：
+# - 任何分支/标签推送后立即同步
+# - GitHub 发布 Release 后，在 Gitee 创建同名 Release 并上传全部附件
+# - 每天北京时间 04:00 定时兜底同步
+# - 也可在 Actions 页面手动触发（workflow_dispatch）
+#
+# 前置条件：仓库 Secrets 中配置 GITEE_TOKEN（Gitee 私人令牌，勾选 projects 权限）
+# 注意：为强制镜像，Gitee 端直接做的改动会被覆盖，请只在 GitHub 上维护内容。
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  release:
+    types: [published]
+  schedule:
+    - cron: "0 20 * * *" # UTC 20:00 = 北京时间 04:00
+  workflow_dispatch:
+
+jobs:
+  code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push all branches & tags to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::warning::未配置 GITEE_TOKEN secret，跳过同步（Settings → Secrets and variables → Actions）"
+            exit 0
+          fi
+          git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/zlwzk/companion-deck.git"
+          echo "::group::推送分支"
+          git push gitee --all --force
+          echo "::endgroup::"
+          echo "::group::推送标签"
+          git push gitee --tags --force
+          echo "::endgroup::"
+
+  release-assets:
+    if: github.event_name == 'release'
+    needs: code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Gitee release & upload assets
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          NAME: ${{ github.event.release.name }}
+          BODY: ${{ github.event.release.body }}
+          REPO_GH: ${{ github.repository }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::warning::未配置 GITEE_TOKEN，跳过 Release 同步"
+            exit 0
+          fi
+          set -e
+          API="https://gitee.com/api/v5/repos/zlwzk/companion-deck"
+          # 幂等：该 tag 在 Gitee 已有 release 则复用，否则创建
+          REL_ID=$(curl -sf "$API/releases/tags/$TAG?access_token=$GITEE_TOKEN" | jq -r '.id // empty' || true)
+          if [ -z "$REL_ID" ]; then
+            jq -n --arg t "$TAG" --arg n "$NAME" --arg b "$BODY" \
+              '{tag_name:$t, name:$n, body:$b, target_commitish:"main"}' > payload.json
+            REL_ID=$(curl -sf -X POST "$API/releases?access_token=$GITEE_TOKEN" \
+              -H "Content-Type: application/json" -d @payload.json | jq -r '.id // empty')
+          fi
+          echo "Gitee release id: $REL_ID"
+          [ -n "$REL_ID" ] || { echo "::error::Gitee release 创建失败"; exit 1; }
+          # 下载 GitHub Release 全部附件并上传到 Gitee
+          gh release download "$TAG" --repo "$REPO_GH" --dir assets --clobber
+          for f in assets/*; do
+            echo "上传 $f"
+            curl -sf -X POST "$API/releases/$REL_ID/attach_files?access_token=$GITEE_TOKEN" \
+              -F "file=@$f" > /dev/null || echo "::warning::附件上传失败: $f"
+          done
+          echo "Gitee Release 同步完成"
