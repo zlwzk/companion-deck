@@ -1,2 +1,4 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
+# 二维码扫码连接（运行时自动 pip install，无系统依赖）
+qrcode[pil]>=7.4

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -19,6 +19,7 @@ from deck.config import save as save_config
 from deck.core.models import AdapterInfo, DeckState, PlaybackInfo, SoundButton
 from deck.core.registry import AdapterRegistry
 from deck.security import make_auth_dep
+from deck.tray import is_supported as tray_supported
 
 logger = logging.getLogger("companiondeck")
 
@@ -39,6 +40,27 @@ class ProfileSwitch(BaseModel):
 
 class SoundPlay(BaseModel):
     id: str
+
+
+class CategorySelect(BaseModel):
+    index: int
+
+
+class PlayFromCategory(BaseModel):
+    category_index: int
+    position_in_category: int
+
+
+class RandomFromCategory(BaseModel):
+    category_index: int
+
+
+class SeekPayload(BaseModel):
+    position_ms: int
+
+
+class JumpPayload(BaseModel):
+    delta_ms: int
 
 
 class ServerApp:
@@ -138,6 +160,18 @@ class ServerApp:
             except Exception:  # noqa: BLE001
                 pass
 
+        if "categories" in active.capabilities:
+            try:
+                categories = active.get_categories()
+                # 限制序列化大小：分类数与每分类声音数都做上限
+                state.categories = self._prune_categories(categories)
+                cur = active.current_category()
+                if cur is not None:
+                    state.current_category_index = cur.index
+                    state.current_category_name = cur.name
+            except Exception:  # noqa: BLE001
+                pass
+
         try:
             state.profile = active.current_profile()
             state.profiles = active.profiles()
@@ -145,6 +179,15 @@ class ServerApp:
             pass
 
         return state
+
+    @staticmethod
+    def _prune_categories(categories: list, max_per_cat: int = 200) -> list:
+        """裁剪分类树用于 WebSocket 推送：限制每分类声音数，避免包过大。"""
+        out = []
+        for cat in categories:
+            cat = cat.model_copy(update={"sounds": cat.sounds[:max_per_cat]}) if hasattr(cat, "model_copy") else cat
+            out.append(cat)
+        return out
 
     # ---------- 路由 ----------
     def _setup_routes(self) -> None:
@@ -156,6 +199,17 @@ class ServerApp:
             return FileResponse(WEB_DIR / "index.html")
 
         app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+
+        @app.get("/manifest.json")
+        def manifest() -> FileResponse:
+            return FileResponse(WEB_DIR / "manifest.json", media_type="application/manifest+json")
+
+        @app.get("/sw.js")
+        def service_worker() -> Response:
+            return Response(
+                (WEB_DIR / "sw.js").read_text(encoding="utf-8"),
+                media_type="text/javascript",
+            )
 
         @app.get("/api/state")
         def api_state(_=Depends(auth)) -> dict:
@@ -173,6 +227,19 @@ class ServerApp:
             except Exception:  # noqa: BLE001
                 raise HTTPException(status_code=502, detail="读取声音列表失败")
             return [t.model_dump() for t in tracks]
+
+        @app.get("/api/categories")
+        def api_categories(_=Depends(auth)) -> list[dict]:
+            active = self.registry.active
+            if active is None or "categories" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持分类")
+            try:
+                cats = active.get_categories()
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持分类")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="读取分类失败")
+            return [c.model_dump() for c in cats]
 
         @app.post("/api/adapter")
         def api_adapter(payload: AdapterSwitch, _=Depends(auth)) -> dict:
@@ -257,6 +324,146 @@ class ServerApp:
                 raise HTTPException(status_code=502, detail="播放失败")
             return {"ok": True}
 
+        # ---------- 分类操作 ----------
+        @app.post("/api/category/select")
+        def api_category_select(payload: CategorySelect, _=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "categories" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持分类")
+            try:
+                active.select_category(payload.index)
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持分类切换")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="切换分类失败")
+            return self._state().model_dump()
+
+        @app.post("/api/category/next")
+        def api_category_next(_=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "categories" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持分类")
+            try:
+                active.next_category()
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持分类切换")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="切换分类失败")
+            return self._state().model_dump()
+
+        @app.post("/api/category/prev")
+        def api_category_prev(_=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "categories" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持分类")
+            try:
+                active.prev_category()
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持分类切换")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="切换分类失败")
+            return self._state().model_dump()
+
+        @app.post("/api/sound/play-from-category")
+        def api_play_from_category(payload: PlayFromCategory, _=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "categories" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持分类")
+            try:
+                active.play_from_category(payload.category_index, payload.position_in_category)
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持按分类播放")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="播放失败")
+            return {"ok": True}
+
+        # ---------- 随机播放 ----------
+        @app.post("/api/sound/random")
+        def api_random(_=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "random" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持随机播放")
+            try:
+                active.play_random()
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持随机播放")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="随机播放失败")
+            return {"ok": True}
+
+        @app.post("/api/sound/random-from-category")
+        def api_random_from_category(payload: RandomFromCategory, _=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "random" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持随机播放")
+            try:
+                active.play_random_from_category(payload.category_index)
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持分类内随机播放")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="随机播放失败")
+            return {"ok": True}
+
+        # ---------- 进度跳转 ----------
+        @app.post("/api/seek")
+        def api_seek(payload: SeekPayload, _=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "seek" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持进度跳转")
+            try:
+                active.seek_ms(payload.position_ms)
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持进度跳转")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="跳转失败")
+            return {"ok": True}
+
+        @app.post("/api/jump")
+        def api_jump(payload: JumpPayload, _=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "seek" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持进度跳转")
+            try:
+                active.jump_ms(payload.delta_ms)
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持进度跳转")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="跳转失败")
+            return {"ok": True}
+
+        @app.post("/api/play-current-again")
+        def api_play_current_again(_=Depends(auth)) -> dict:
+            active = self.registry.active
+            if active is None or "seek" not in active.capabilities:
+                raise HTTPException(status_code=400, detail="当前适配器不支持此操作")
+            try:
+                active.play_current_again()
+            except Unsupported:
+                raise HTTPException(status_code=400, detail="不支持重新播放")
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="重新播放失败")
+            return {"ok": True}
+
+        @app.get("/api/qr")
+        def api_qr(url: str = "", _=Depends(auth)) -> Response:
+            """为给定 URL 生成 SVG QR 码（依赖 qrcode 库）。"""
+            target = url or self._lan_url()
+            if not target:
+                raise HTTPException(status_code=400, detail="无可用的局域网地址")
+            from deck.qrcode import is_available, to_svg
+
+            if not is_available():
+                raise HTTPException(status_code=502, detail="二维码库未安装（pip install qrcode）")
+            try:
+                svg = to_svg(target)
+            except Exception:  # noqa: BLE001
+                raise HTTPException(status_code=502, detail="二维码生成失败")
+            return Response(svg, media_type="image/svg+xml")
+
+        @app.get("/api/tray-supported")
+        def api_tray_supported() -> dict:
+            return {"supported": tray_supported()}
+
         @app.websocket("/ws")
         async def ws_endpoint(websocket: WebSocket) -> None:
             expected = self._get_token()
@@ -278,3 +485,16 @@ class ServerApp:
                 pass
             except Exception:  # noqa: BLE001
                 logger.debug("WebSocket 连接结束", exc_info=True)
+
+    def _lan_url(self) -> Optional[str]:
+        """返回首选局域网访问 URL（端口取配置）。"""
+        try:
+            from deck.lan import lan_ips, hotspot_ips
+
+            port = int((self.cfg.get("server") or {}).get("port") or 8390)
+            for ip in lan_ips() + hotspot_ips():
+                if ip:
+                    return f"http://{ip}:{port}"
+        except Exception:  # noqa: BLE001
+            pass
+        return None

@@ -1,0 +1,17 @@
+{
+  "name": "CompanionDeck 伴侣操控台",
+  "short_name": "CompanionDeck",
+  "description": "在手机上控制电脑上的 Soundpad 与其他媒体软件",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0e13",
+  "theme_color": "#0b0e13",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

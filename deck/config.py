@@ -19,11 +19,21 @@ DEFAULTS: dict = {
         "token": None,  # None 表示首次运行时自动生成
     },
     "active_adapter": "soundpad",
+    "ui": {
+        # 显示偏好（不影响服务端功能）
+        "show_qr_button": True,
+        "show_random_button": True,
+        "default_category_tab": True,
+    },
+    "system": {
+        "tray": True,           # 启动时创建系统托盘
+        "autostart": False,     # 是否设置开机自启（用 --autostart on 切换）
+    },
     "adapters": {
         "soundpad": {
             "enabled": True,
             # 声音面板按钮：id / name / kind(index|hotkey) / index 或 hotkey
-            # 留空则自动从 Soundpad 声音列表生成（按列表索引播放）
+            # 留空则自动从 Soundpad 分类树生成（按分类组织，分类内按位置播放）
             "sounds": [],
         },
         "mediakeys": {

@@ -8,6 +8,15 @@
     "token": "首次运行自动生成，也可手动填写"
   },
   "active_adapter": "soundpad",
+  "ui": {
+    "show_qr_button": true,
+    "show_random_button": true,
+    "default_category_tab": true
+  },
+  "system": {
+    "tray": true,
+    "autostart": false
+  },
   "adapters": {
     "soundpad": {
       "enabled": true,

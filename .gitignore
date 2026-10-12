@@ -13,3 +13,11 @@ config.json
 *.tmp
 .DS_Store
 Thumbs.db
+
+# 打包产物
+build/
+dist/
+*.spec.bak
+
+# 打包 spec（用户已删除，不纳入仓库）
+companion-deck.spec

@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b0e13">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <title>CompanionDeck</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -15,6 +17,7 @@
         <span class="brand-name">CompanionDeck</span>
       </div>
       <div class="top-right">
+        <button id="btnQr" class="icon-btn" title="扫码连接">▦</button>
         <span id="statusDot" class="dot" title="连接状态"></span>
         <span id="connText" class="conn-text">连接中…</span>
       </div>
@@ -31,7 +34,10 @@
       <section id="npCard" class="card hidden">
         <div class="np-status" id="npStatus">—</div>
         <div class="np-title" id="npTitle">未在播放</div>
-        <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+        <div class="np-meta" id="npMeta"></div>
+        <div class="progress" id="progressTrack">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
         <div class="time-info" id="timeInfo"></div>
       </section>
 
@@ -40,6 +46,7 @@
         <button id="btnPlay" class="t-btn big" data-action="play_pause" title="播放/暂停">▶</button>
         <button id="btnNext" class="t-btn" data-action="next" title="下一首">⏭</button>
         <button id="btnStop" class="t-btn" data-action="stop" title="停止">⏹</button>
+        <button id="btnRandom" class="t-btn" title="随机播放">🎲</button>
       </section>
 
       <section id="volumeCard" class="card volume hidden">
@@ -50,9 +57,22 @@
         <button id="btnVolUp" class="t-btn small" data-action="volume_up" title="音量+">+</button>
       </section>
 
+      <section id="categoryCard" class="card hidden">
+        <div class="category-bar">
+          <button id="btnCatPrev" class="cat-nav" title="上一个分类">‹</button>
+          <div class="cat-tabs-wrap">
+            <div id="catTabs" class="cat-tabs"></div>
+          </div>
+          <button id="btnCatNext" class="cat-nav" title="下一个分类">›</button>
+        </div>
+      </section>
+
       <section id="soundsCard" class="card hidden">
         <h2 class="card-label">声音面板</h2>
-        <div id="soundsWrap"></div>
+        <div class="sound-toolbar">
+          <button id="btnCatRandom" class="chip" title="当前分类随机播放">🎲 当前分类随机</button>
+        </div>
+        <div id="soundsWrap" class="grid"></div>
       </section>
 
       <section id="tracksCard" class="card hidden">
@@ -62,7 +82,7 @@
       </section>
     </main>
 
-    <footer class="foot">CompanionDeck · 伴侣操控台（局域网 / 互联网）</footer>
+    <footer class="foot">CompanionDeck · 伴侣操控台 · 局域网直连</footer>
   </div>
 
   <div id="tokenModal" class="modal hidden">
@@ -74,6 +94,23 @@
     </div>
   </div>
 
+  <div id="qrModal" class="modal hidden">
+    <div class="modal-box">
+      <h2>扫码连接</h2>
+      <p>用手机相机或扫码 App 扫描下方二维码，免输入地址与口令。</p>
+      <div id="qrWrap" class="qr-wrap"></div>
+      <div id="qrAddr" class="hint"></div>
+      <button id="btnQrClose" class="btn-primary">关闭</button>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/sw.js").catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>
