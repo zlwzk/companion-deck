@@ -32,6 +32,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Rewrite commit emails (avoid Gitee hidden-email hook)
+        env:
+          FILTER_BRANCH_SQUELCH_WARNING: 1
+        run: |
+          # Gitee 会拒绝包含「用户设为私密的邮箱」的提交；镜像推送前统一改写
+          # 提交邮箱为中性地址（仅改写镜像副本，GitHub 仓库不受影响）
+          git filter-branch -f --env-filter '
+            export GIT_AUTHOR_EMAIL="companion-deck@noreply.git"
+            export GIT_COMMITTER_EMAIL="companion-deck@noreply.git"
+          ' --tag-name-filter cat -- --all
+
       - name: Push all branches & tags to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
