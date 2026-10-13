@@ -5,24 +5,45 @@
 http://127.0.0.1:8390，流量走 USB 线，完全绕过 Wi-Fi、热点、NAT 与防火墙，
 校园网客户端（如锐捷）也无法感知。
 
-仅依赖 Google platform-tools 中的 adb.exe（用户自备并加入 PATH），
-本模块只调用已存在的 adb，不会下载或安装任何东西。
+adb 本体来自 Google platform-tools：
+- 优先使用系统 PATH 中已安装的 adb；
+- 其次使用本程序引导安装的位置（%LOCALAPPDATA%\\CompanionDeck\\platform-tools）；
+- 都没有时，连接向导可在征得用户同意后自动下载安装（约 8 MB，Google 官方源）。
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
+import urllib.request
+import zipfile
+from pathlib import Path
 from typing import Optional
 
 # Windows 下隐藏 adb 子进程的控制台窗口；其他平台无此标志
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
 
+# Google 官方 platform-tools 最新版下载地址（Windows）
+PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+
+
+def _install_root() -> Path:
+    """向导安装位置根目录：%LOCALAPPDATA%\\CompanionDeck。"""
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "CompanionDeck"
+
+
+def known_install() -> Optional[str]:
+    """返回向导此前安装的 adb 路径；不存在返回 None。"""
+    candidate = _install_root() / "platform-tools" / "adb.exe"
+    return str(candidate) if candidate.is_file() else None
+
 
 def adb_path() -> Optional[str]:
     """返回可用的 adb 可执行文件路径；未安装返回 None。"""
-    return shutil.which("adb")
+    return shutil.which("adb") or known_install()
 
 
 def _run(args: list[str], timeout: float = 8.0) -> subprocess.CompletedProcess:
@@ -36,8 +57,40 @@ def _run(args: list[str], timeout: float = 8.0) -> subprocess.CompletedProcess:
     )
 
 
-def devices() -> list[str]:
-    """列出已连接且状态为 device 的 USB 设备序列号。"""
+def install_adb() -> tuple[bool, str]:
+    """从 Google 官方源下载并解压 platform-tools 到本程序目录。
+
+    仅使用标准库（urllib + zipfile），解压到用户目录，不改系统 PATH、
+    不写注册表。返回 (是否成功, 提示消息)。
+    """
+    root = _install_root()
+    dest = root / "platform-tools"
+    zip_path = root / "platform-tools.zip"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(PLATFORM_TOOLS_URL, timeout=30) as resp, open(zip_path, "wb") as f:
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(root)  # 压缩包内含 platform-tools/ 目录
+        adb = dest / "adb.exe"
+        if not adb.is_file():
+            return False, "下载的压缩包结构异常（未找到 adb.exe）"
+    except Exception as e:  # noqa: BLE001 网络/磁盘失败一律降级
+        return False, f"自动安装 adb 失败：{e}"
+    finally:
+        try:
+            zip_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return True, f"adb 已安装到 {dest}"
+
+
+def devices_status() -> list[tuple[str, str]]:
+    """列出全部 USB 设备的 (序列号, 状态)，状态含 device / unauthorized / offline。"""
     adb = adb_path()
     if not adb:
         return []
@@ -45,15 +98,20 @@ def devices() -> list[str]:
         proc = _run([adb, "devices"], timeout=5.0)
     except Exception:  # noqa: BLE001 adb 崩溃/驱动异常按无设备处理
         return []
-    serials: list[str] = []
+    out: list[tuple[str, str]] = []
     for line in (proc.stdout or "").splitlines():
         line = line.strip()
         if not line or line.startswith("List of devices"):
             continue
         parts = line.split()
-        if len(parts) >= 2 and parts[1] == "device":  # 排除 offline / unauthorized
-            serials.append(parts[0])
-    return serials
+        if len(parts) >= 2 and parts[0] != "*":
+            out.append((parts[0], parts[1]))
+    return out
+
+
+def devices() -> list[str]:
+    """列出已连接且状态为 device 的 USB 设备序列号。"""
+    return [serial for serial, state in devices_status() if state == "device"]
 
 
 def reverse(port: int) -> tuple[bool, str]:

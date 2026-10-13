@@ -8,6 +8,7 @@ import socket
 import sys
 import threading
 import webbrowser
+from typing import Optional
 
 import uvicorn
 
@@ -67,7 +68,9 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true", help="启动后不打开浏览器")
     parser.add_argument("--no-tray", action="store_true", help="不创建系统托盘图标")
     parser.add_argument("--usb", action="store_true",
-                        help="USB 直连：自动执行 adb reverse，手机插线访问 http://127.0.0.1:端口（需 adb 与 USB 调试）")
+                        help="USB 直连：进入分步向导（自动检测 adb/插线/授权并桥接），手机访问 http://127.0.0.1:端口")
+    parser.add_argument("--no-wizard", action="store_true",
+                        help="跳过启动连接向导（开机自启/无人值守场景），自动检测全部通道")
     parser.add_argument("--autostart", choices=["on", "off", "status"], default=None,
                         help="管理开机自启：on=启用 / off=禁用 / status=查询")
     parser.add_argument("--cwd", type=str, default=None, help="开机自启时的工作目录（仅与 autostart on 配合使用）")
@@ -117,21 +120,56 @@ def main() -> None:
 
     channels = urls_by_channel(port)
 
-    # ---------- USB 直连（adb reverse） ----------
+    def _add_usb_channel() -> None:
+        channels.append(
+            {"channel": "USB 直连", "url": f"http://127.0.0.1:{port}",
+             "hint": "手机浏览器直接打开（流量走数据线）"}
+        )
+
+    # ---------- 连接方式选择 / USB 直连 ----------
     usb_ok = False
     usb_msg = ""
-    if args.usb:
-        from deck.adb import reverse as adb_reverse
-        usb_ok, usb_msg = adb_reverse(port)
-        if usb_ok:
-            channels.append(
-                {"channel": "USB 直连", "url": f"http://127.0.0.1:{port}",
-                 "hint": "手机浏览器直接打开（流量走数据线）"}
-            )
+    focus: Optional[str] = None  # 向导特别突出的通道（决定二维码指向）
+    interactive = sys.stdin.isatty()
 
-    # 二维码首选地址：热点 / USB 直连 > 局域网（手机只能稳定回访直连链路）
-    direct = next((c for c in channels if c["channel"] in ("电脑热点", "USB 直连")), None)
-    qr_channel = direct or next((c for c in channels if c["channel"] == "局域网"), None)
+    def _try_auto_bridge() -> None:
+        """智能模式：检测到已授权手机则自动桥接。"""
+        nonlocal usb_ok, usb_msg, focus
+        import deck.adb as _adb
+        if _adb.adb_path() and _adb.devices():
+            usb_ok, usb_msg = _adb.reverse(port)
+            if usb_ok:
+                _add_usb_channel()
+                focus = "USB 直连"
+
+    if args.usb:
+        from deck.wizard import run_usb_wizard
+        usb_ok, usb_msg = run_usb_wizard(port, interactive=interactive)
+        if usb_ok:
+            _add_usb_channel()
+            focus = "USB 直连"
+    elif args.no_wizard or not interactive:
+        _try_auto_bridge()
+    else:
+        from deck.wizard import show_menu
+        choice = show_menu()
+        if choice == "usb":
+            usb_ok, usb_msg = run_usb_wizard(port, interactive=True)
+            if usb_ok:
+                _add_usb_channel()
+                focus = "USB 直连"
+        elif choice is None:
+            _try_auto_bridge()
+        else:
+            focus = choice  # 电脑热点 / 局域网
+
+    # 二维码首选地址：向导所选通道 > 直连链路（热点/USB） > 局域网
+    qr_channel = None
+    if focus:
+        qr_channel = next((c for c in channels if c["channel"] == focus), None)
+    if qr_channel is None:
+        direct = next((c for c in channels if c["channel"] in ("电脑热点", "USB 直连")), None)
+        qr_channel = direct or next((c for c in channels if c["channel"] == "局域网"), None)
     lan_url = qr_channel["url"] if qr_channel else None
     qr_url = f"{lan_url}?token={token}" if lan_url and token else (lan_url or f"http://127.0.0.1:{port}")
 
@@ -161,6 +199,12 @@ def main() -> None:
         print("[提示] 未检测到局域网/热点地址，本机访问仍可用；")
         print("        如需手机控制，请检查网络连接（详见 docs/SETUP.md）。")
     else:
+        if focus in ("电脑热点", "局域网"):
+            from deck.wizard import channel_steps
+            print(f"「{focus}」连接步骤：")
+            for step in channel_steps(focus):
+                print(f"  {step}")
+            print()
         print("连接方式速查（完整步骤见 docs/SETUP.md）：")
         print("  ① 同一 Wi-Fi     → 手机打开「局域网」地址，或扫上方的「扫码直连」二维码")
         print("  ② 打游戏时       → 手机连电脑「移动热点」→ 打开「电脑热点」地址")

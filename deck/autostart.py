@@ -23,13 +23,13 @@ def _startup_command(config_path: Optional[str] = None) -> str:
     """
     if getattr(sys, "frozen", False):  # PyInstaller 打包后
         exe = Path(sys.executable)
-        cmd = f'"{exe}"'
+        cmd = f'"{exe}" --no-wizard'
     else:
         # 开发环境：用当前 Python 解释器
         python = sys.executable
         # 找到项目根目录（含 deck 包）
         here = Path(__file__).resolve().parent.parent
-        cmd = f'"{python}" -m deck'
+        cmd = f'"{python}" -m deck --no-wizard'
         cmd += f' --cwd "{here}"' if here else ""
     if config_path:
         cmd += f' --config "{config_path}"'
