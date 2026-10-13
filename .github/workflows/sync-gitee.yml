@@ -1,4 +1,10 @@
-name: Sync to Gitee
+﻿name: Sync to Gitee
+
+# 并发保护：同一时刻只允许一个同步任务，后来的触发会取消正在进行的旧任务，
+# 避免「tag 推送」与「release 发布」同时触发两个 run 互相强推冲突。
+concurrency:
+  group: sync-gitee
+  cancel-in-progress: true
 
 # GitHub → Gitee 自动镜像：
 # - 任何分支/标签推送后立即同步
