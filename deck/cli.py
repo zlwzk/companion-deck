@@ -129,6 +129,7 @@ def main() -> None:
     # ---------- 连接方式选择 / USB 直连 ----------
     usb_ok = False
     usb_msg = ""
+    attempted_usb = False  # 用户明确尝试过 USB/修复（汇总区展示结果）
     focus: Optional[str] = None  # 向导特别突出的通道（决定二维码指向）
     interactive = sys.stdin.isatty()
 
@@ -146,16 +147,24 @@ def main() -> None:
     if args.usb:
         from deck.wizard import run_usb_wizard
         usb_ok, usb_msg = run_usb_wizard(port, interactive=interactive)
+        attempted_usb = True
         if usb_ok:
             _add_usb_channel()
             focus = "USB 直连"
     elif args.no_wizard or not interactive:
         _try_auto_bridge()
     else:
-        from deck.wizard import show_menu
+        from deck.wizard import run_repair_wizard, run_usb_wizard, show_menu
         choice = show_menu()
         if choice == "usb":
             usb_ok, usb_msg = run_usb_wizard(port, interactive=True)
+            attempted_usb = True
+            if usb_ok:
+                _add_usb_channel()
+                focus = "USB 直连"
+        elif choice == "repair":
+            usb_ok, usb_msg = run_repair_wizard(port, interactive=True)
+            attempted_usb = True
             if usb_ok:
                 _add_usb_channel()
                 focus = "USB 直连"
@@ -187,7 +196,7 @@ def main() -> None:
     else:
         print("  访问口令   : 已关闭（auth.enabled = false）")
     print(f"  当前适配器 : {active.display_name if active else '无'}（{soundpad_online}）")
-    if args.usb:
+    if attempted_usb:
         state = "✔ " + usb_msg if usb_ok else "✘ " + usb_msg
         print(f"  USB 直连   : {state}")
     autostart_state = "已启用" if autostart_enabled() else "未启用"
@@ -209,7 +218,7 @@ def main() -> None:
         print("连接方式速查（完整步骤见 docs/SETUP.md）：")
         print("  ① 同一 Wi-Fi     → 手机打开「局域网」地址，或扫上方的「扫码直连」二维码")
         print("  ② 打游戏时       → 手机连电脑「移动热点」→ 打开「电脑热点」地址")
-        print("  ③ 数据线直连     → 启动时加 --usb 参数（需 adb），手机浏览器打开 http://127.0.0.1:" + str(port))
+        print("  ③ 数据线直连     → 启动菜单选 [1]（或加 --usb 参数）；识别不到时选 [4] 一键修复驱动识别")
         if any(ch["channel"] == "IPv6 直连" for ch in channels):
             print("  ④ 人在外面       → 可选「IPv6 直连」地址（需在路由器放行；详见 SETUP.md）")
         # 终端打印二维码（如果安装了 qrcode）

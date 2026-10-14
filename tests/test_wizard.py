@@ -26,6 +26,12 @@ class TestParseChoice:
         assert wizard.parse_choice("3") == "局域网"
         assert wizard.parse_choice("WIFI") == "局域网"
 
+    def test_repair(self):
+        assert wizard.parse_choice("4") == "repair"
+        assert wizard.parse_choice("修复") == "repair"
+        assert wizard.parse_choice("r") == "repair"
+        assert wizard.parse_choice("FIX") == "repair"
+
     def test_smart_default(self):
         assert wizard.parse_choice("") is None
         assert wizard.parse_choice("  ") is None
@@ -199,6 +205,114 @@ class TestUsbWizard:
         ok, _ = wizard.run_usb_wizard(8390, interactive=True)
         assert ok is True
         assert len(calls) == 1
+
+
+# ---------- 一键修复驱动识别向导 ----------
+
+class TestRepairWizard:
+    @pytest.fixture(autouse=True)
+    def _no_sleep(self, monkeypatch):
+        monkeypatch.setattr(wizard.time, "sleep", lambda s: None)
+
+    def test_no_adb(self, monkeypatch):
+        monkeypatch.setattr(adb, "adb_path", lambda: None)
+        ok, msg = wizard.run_repair_wizard(8390, interactive=False)
+        assert ok is False
+        assert "adb" in msg
+
+    def test_repair_failure_no_bridge(self, monkeypatch):
+        """修复失败（如取消 UAC）直接返回失败，不尝试桥接。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        monkeypatch.setattr(
+            adb, "repair_recognition",
+            lambda: (False, "已取消管理员授权，未执行修复")
+        )
+        called = []
+        monkeypatch.setattr(
+            adb, "reverse_with_retry",
+            lambda port: (called.append(1), (True, ""))[1]
+        )
+        ok, msg = wizard.run_repair_wizard(8390, interactive=True)
+        assert ok is False
+        assert "取消" in msg
+        assert called == []
+
+    def test_success_bridges(self, monkeypatch):
+        """修复成功且手机已授权：自动完成反向转发。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        repairs = []
+        monkeypatch.setattr(
+            adb, "repair_recognition",
+            lambda: (repairs.append(1), (True, "已修复"))[1]
+        )
+        monkeypatch.setattr(adb, "devices_status", lambda: [("S1", "device")])
+        monkeypatch.setattr(adb, "reverse_with_retry", lambda port: (True, "已桥接"))
+        ok, _ = wizard.run_repair_wizard(8390, interactive=True)
+        assert ok is True
+        assert len(repairs) == 1
+
+    def test_unauthorized_then_ready(self, monkeypatch):
+        """修复后手机弹授权框：提示后等待，授权成功即桥接。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        monkeypatch.setattr(adb, "repair_recognition", lambda: (True, "已修复"))
+        states = iter([[("S1", "unauthorized")], [("S1", "device")]])
+        monkeypatch.setattr(adb, "devices_status", lambda: next(states))
+        answers = iter([""])
+        monkeypatch.setattr(builtins, "input", lambda prompt="": next(answers))
+        monkeypatch.setattr(adb, "reverse_with_retry", lambda port: (True, "已桥接"))
+        ok, _ = wizard.run_repair_wizard(8390, interactive=True)
+        assert ok is True
+
+    def test_repaired_but_no_device(self, monkeypatch):
+        """修复成功但仍检测不到：提示重新插拔数据线。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        monkeypatch.setattr(adb, "repair_recognition", lambda: (True, "已修复"))
+        monkeypatch.setattr(adb, "devices_status", lambda: [])
+        monkeypatch.setattr(builtins, "input", lambda prompt="": "s")
+        ok, msg = wizard.run_repair_wizard(8390, interactive=True)
+        assert ok is False
+        assert "重新插拔" in msg
+
+    def test_replug_auto_detects_without_input(self, monkeypatch):
+        """重新插拔后自动检测到设备，全程无需按回车。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        monkeypatch.setattr(adb, "repair_recognition", lambda: (True, "已修复"))
+        states = iter([[], [], [("S1", "device")]])
+        monkeypatch.setattr(adb, "devices_status", lambda: next(states))
+
+        def no_input(prompt=""):
+            raise AssertionError("不应等待用户输入")
+
+        monkeypatch.setattr(builtins, "input", no_input)
+        monkeypatch.setattr(adb, "reverse_with_retry", lambda port: (True, "已桥接"))
+        ok, _ = wizard.run_repair_wizard(8390, interactive=True)
+        assert ok is True
+
+    def test_replug_timeout_then_retry_round(self, monkeypatch):
+        """一轮自动检测超时后，回车可再来一轮直到设备出现。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        monkeypatch.setattr(adb, "repair_recognition", lambda: (True, "已修复"))
+        # 预检 1 次 + 第一轮 _REPLUG_POLLS 次全空，第二轮第一次即检测到
+        states = iter([[]] * (wizard._REPLUG_POLLS + 1) + [[("S1", "device")]])
+        monkeypatch.setattr(adb, "devices_status", lambda: next(states))
+        answers = iter([""])
+        monkeypatch.setattr(builtins, "input", lambda prompt="": next(answers))
+        monkeypatch.setattr(adb, "reverse_with_retry", lambda port: (True, "已桥接"))
+        ok, _ = wizard.run_repair_wizard(8390, interactive=True)
+        assert ok is True
+
+    def test_replug_offline_triggers_reconnect(self, monkeypatch):
+        """自动轮询期间设备 offline：自动 reconnect 后恢复。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        monkeypatch.setattr(adb, "repair_recognition", lambda: (True, "已修复"))
+        states = iter([[("S1", "offline")], [("S1", "offline")], [("S1", "device")]])
+        monkeypatch.setattr(adb, "devices_status", lambda: next(states))
+        calls = []
+        monkeypatch.setattr(adb, "reconnect", lambda: calls.append(1))
+        monkeypatch.setattr(adb, "reverse_with_retry", lambda port: (True, "已桥接"))
+        ok, _ = wizard.run_repair_wizard(8390, interactive=True)
+        assert ok is True
+        assert len(calls) >= 1
 
 
 # ---------- adb 重试逻辑 ----------
