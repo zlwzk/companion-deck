@@ -254,6 +254,7 @@ def main() -> None:
         threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
 
     listen_sock, _ = _make_listen_socket(host, port)
+    server_app.start_ptt_monitor()  # PTT 自动按键监控（enabled=false 时线程空转，无开销）
     config = uvicorn.Config(app, log_level="warning")
     server = uvicorn.Server(config)
     server.run(sockets=[listen_sock])

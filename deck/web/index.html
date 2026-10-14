@@ -15,8 +15,11 @@
       <div class="brand">
         <span class="logo"></span>
         <span class="brand-name">CompanionDeck</span>
+        <span id="verTag" class="ver-tag"></span>
       </div>
       <div class="top-right">
+        <span id="pttDot" class="dot ptt hidden" title="自动按键"></span>
+        <button id="btnSettings" class="icon-btn" title="设置">⚙</button>
         <button id="btnQr" class="icon-btn" title="扫码连接">▦</button>
         <span id="statusDot" class="dot" title="连接状态"></span>
         <span id="connText" class="conn-text">连接中…</span>
@@ -101,6 +104,58 @@
       <div id="qrWrap" class="qr-wrap"></div>
       <div id="qrAddr" class="hint"></div>
       <button id="btnQrClose" class="btn-primary">关闭</button>
+    </div>
+  </div>
+
+  <div id="setModal" class="modal hidden">
+    <div class="modal-box">
+      <h2>设置</h2>
+      <div class="set-sec">
+        <div class="set-title">🎙 游戏语音自动按键</div>
+        <p class="set-hint">播放声音时自动按下游戏内的「按键说话」键，实现半自动语音播放。</p>
+        <label class="set-row">
+          <input id="pttEnabled" type="checkbox">
+          <span>启用自动按键</span>
+        </label>
+        <div class="set-row">
+          <span class="set-key">按键</span>
+          <input id="pttKey" class="filter set-input" type="text" maxlength="9" placeholder="V" autocomplete="off">
+        </div>
+        <div class="set-hint">支持 A-Z、0-9，或 SPACE / ENTER / TAB / SHIFT / CTRL / ALT / F1-F12</div>
+        <div class="set-row">
+          <span class="set-key">方式</span>
+          <div class="chips" style="margin-top:0">
+            <button id="pttModeHold" class="chip">长按（播放期间按住）</button>
+            <button id="pttModeTap" class="chip">点按（播放时按一下）</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-key2">提前量</span>
+          <input id="pttLead" class="slider" type="range" min="0" max="500" step="10">
+          <span id="pttLeadVal" class="set-val">150ms</span>
+        </div>
+        <div class="set-hint">按键先于播放的时间，避免语音开头被游戏截断（0~500ms）</div>
+        <div class="set-row">
+          <span class="set-key2">点按时长</span>
+          <input id="pttTap" class="slider" type="range" min="0" max="500" step="10">
+          <span id="pttTapVal" class="set-val">60ms</span>
+        </div>
+        <div class="set-hint">「点按」模式按键按下的时长（0~500ms）</div>
+        <div class="set-row">
+          <span class="set-key2">松键延迟</span>
+          <input id="pttTail" class="slider" type="range" min="300" max="1000" step="50">
+          <span id="pttTailVal" class="set-val">500ms</span>
+        </div>
+        <div class="set-hint">「长按」模式声音结束后多按一会儿再松开，盖住收尾截断（300~1000ms）</div>
+        <button id="btnPttTest" class="btn-primary btn-ghost">🔊 试按一下（验证按键是否生效）</button>
+        <div id="pttTestMsg" class="set-hint"></div>
+      </div>
+      <div class="set-sec">
+        <div class="set-title">🏷 关于</div>
+        <div class="set-hint">当前版本 <span id="setVerNow"></span><span id="setVerNew"></span></div>
+      </div>
+      <button id="btnSetSave" class="btn-primary">保存</button>
+      <button id="btnSetClose" class="btn-primary btn-ghost">关闭</button>
     </div>
   </div>
 

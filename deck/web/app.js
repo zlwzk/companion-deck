@@ -215,13 +215,31 @@
     });
   }
 
+  /* ---------- 点播声音：乐观更新页头 + 滚动到顶部 ---------- */
+  function playSound(id, name) {
+    // 立即把"正在播放"切为新声音，不等服务端轮询（解决显示旧声音信息的问题）
+    if (state) {
+      state.playback = Object.assign({}, state.playback, {
+        status: "playing",
+        track_name: name,
+        position_ms: 0,
+      });
+      renderNowPlaying();
+      renderSounds(); // 同步按钮高亮
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    api("/api/sound/play", { method: "POST", body: JSON.stringify({ id: id }) })
+      .then(refresh)
+      .catch(showError);
+  }
+
   function makeSoundButton(s, playingIdx) {
     var btn = document.createElement("button");
     btn.className = "sound-btn";
     if (s.index != null && s.index === playingIdx) btn.classList.add("playing");
     btn.textContent = s.name;
     btn.addEventListener("click", function () {
-      api("/api/sound/play", { method: "POST", body: JSON.stringify({ id: s.id }) }).catch(showError);
+      playSound(s.id, s.name);
     });
     return btn;
   }
@@ -308,7 +326,7 @@
     if (meta.textContent) li.appendChild(meta);
     li.appendChild(play);
     li.addEventListener("click", function () {
-      api("/api/sound/play", { method: "POST", body: JSON.stringify({ id: String(t.index) }) }).catch(showError);
+      playSound(String(t.index), t.name);
     });
     return li;
   }
@@ -325,6 +343,8 @@
     var ok = state.adapter_available;
     $("statusDot").className = "dot " + (ok ? "ok" : "err");
     $("connText").textContent = ok ? "已连接" : (state.adapter ? "目标离线" : "无适配器");
+    $("verTag").textContent = state.version ? "v" + state.version : "";
+    renderPttDot();
     if (state.adapter && !ok) showError(new Error("目标软件（" + state.adapter_display + "）当前不可用，请确认它正在运行"));
   }
 
@@ -332,6 +352,7 @@
     var ok = state.adapter_available;
     $("statusDot").className = "dot " + (ok ? "ok" : "err");
     $("connText").textContent = ok ? "已连接" : (state.adapter ? "目标离线" : "无适配器");
+    renderPttDot();
     renderNowPlaying();
     renderVolumeLight();
     renderSounds(); // 刷新"当前播放"高亮
@@ -444,6 +465,74 @@
     $("btnQrClose").addEventListener("click", function () {
       $("qrModal").classList.add("hidden");
     });
+
+    // 设置弹窗
+    $("btnSettings").addEventListener("click", openSettings);
+    $("btnSetClose").addEventListener("click", function () {
+      $("setModal").classList.add("hidden");
+    });
+    $("btnSetSave").addEventListener("click", saveSettings);
+    $("pttModeHold").addEventListener("click", function () { pttMode = "hold"; renderPttMode(); });
+    $("pttModeTap").addEventListener("click", function () { pttMode = "tap"; renderPttMode(); });
+    [["pttLead", "pttLeadVal"], ["pttTap", "pttTapVal"], ["pttTail", "pttTailVal"]].forEach(function (pair) {
+      $(pair[0]).addEventListener("input", function () { $(pair[1]).textContent = this.value + "ms"; });
+    });
+    $("btnPttTest").addEventListener("click", function () {
+      var msg = $("pttTestMsg");
+      msg.textContent = "正在试按…";
+      api("/api/ptt/test", { method: "POST" }).then(function (r) {
+        msg.textContent = "已按下并松开「" + r.key + "」，请确认游戏内语音是否被激活";
+      }).catch(function (e) { msg.textContent = "试按失败：" + e.message; });
+    });
+  }
+
+  /* ---------- 设置弹窗（PTT 自动按键 + 关于） ---------- */
+  var pttMode = "hold";
+
+  function renderPttMode() {
+    $("pttModeHold").classList.toggle("active", pttMode === "hold");
+    $("pttModeTap").classList.toggle("active", pttMode === "tap");
+  }
+
+  function openSettings() {
+    $("setModal").classList.remove("hidden");
+    $("pttTestMsg").textContent = "";
+    api("/api/ptt").then(function (p) {
+      $("pttEnabled").checked = !!p.enabled;
+      $("pttKey").value = p.key || "V";
+      pttMode = p.mode === "tap" ? "tap" : "hold";
+      renderPttMode();
+      $("pttLead").value = p.lead_ms; $("pttLeadVal").textContent = p.lead_ms + "ms";
+      $("pttTap").value = p.tap_ms; $("pttTapVal").textContent = p.tap_ms + "ms";
+      $("pttTail").value = p.tail_ms; $("pttTailVal").textContent = p.tail_ms + "ms";
+    }).catch(showError);
+  }
+
+  function saveSettings() {
+    var payload = {
+      enabled: $("pttEnabled").checked,
+      key: $("pttKey").value.trim() || "V",
+      mode: pttMode,
+      lead_ms: parseInt($("pttLead").value, 10),
+      tap_ms: parseInt($("pttTap").value, 10),
+      tail_ms: parseInt($("pttTail").value, 10),
+    };
+    api("/api/ptt", { method: "POST", body: JSON.stringify(payload) })
+      .then(function () {
+        state.ptt_enabled = payload.enabled;
+        renderPttDot();
+        $("setModal").classList.add("hidden");
+      })
+      .catch(showError);
+  }
+
+  /* ---------- PTT 状态点 ---------- */
+  function renderPttDot() {
+    var dot = $("pttDot");
+    if (!state || !state.ptt_enabled) { dot.classList.add("hidden"); return; }
+    dot.classList.remove("hidden");
+    dot.classList.toggle("holding", !!state.ptt_holding);
+    dot.title = state.ptt_holding ? "语音键按住中" : "自动按键已启用（未按住）";
   }
 
   function loadTracks() {
@@ -497,6 +586,8 @@
           state.profile = s.profile;
           state.profiles = s.profiles;
           state.adapters = s.adapters;
+          state.ptt_enabled = s.ptt_enabled;
+          state.ptt_holding = s.ptt_holding;
           if (s.categories) state.categories = s.categories;
           renderLight();
         }
@@ -539,14 +630,18 @@
   /* ---------- 版本信息 ---------- */
   function loadVersion() {
     api("/api/version").then(function (v) {
-      if (v.current) $("verNow").textContent = "v" + v.current;
-      var el = $("verNew");
-      if (!el) return;
+      var nowText = v.current ? "v" + v.current : "";
+      var newHtml = "";
       if (v.update_available && v.latest) {
-        el.innerHTML = ' · <a href="' + (v.url || "#") + '" target="_blank" rel="noopener" style="color:#4ade80">🎉 有新版本 v' + v.latest + "</a>";
+        newHtml = ' · <a href="' + (v.url || "#") + '" target="_blank" rel="noopener" style="color:#4ade80">🎉 有新版本 v' + v.latest + "</a>";
       } else if (v.checked && v.latest) {
-        el.textContent = " · 已是最新";
+        newHtml = " · 已是最新";
       }
+      if (nowText) $("verNow").textContent = nowText;
+      $("verNew").innerHTML = newHtml;
+      // 设置弹窗「关于」区同步
+      $("setVerNow").textContent = nowText;
+      $("setVerNew").innerHTML = newHtml;
     }).catch(function () { /* 离线时静默 */ });
   }
 

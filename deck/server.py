@@ -18,6 +18,8 @@ from deck.adapters.base import BaseAdapter, Unsupported
 from deck.config import save as save_config
 from deck.core.models import AdapterInfo, DeckState, PlaybackInfo, SoundButton
 from deck.core.registry import AdapterRegistry
+from deck.ptt import LEAD_RANGE, MODES as PTT_MODES, TAIL_RANGE, TAP_RANGE
+from deck.ptt import PttController, clamp_ms, normalize_key
 from deck.security import make_auth_dep
 from deck.tray import is_supported as tray_supported
 
@@ -63,6 +65,15 @@ class JumpPayload(BaseModel):
     delta_ms: int
 
 
+class PttSettings(BaseModel):
+    enabled: Optional[bool] = None
+    key: Optional[str] = None
+    mode: Optional[str] = None
+    lead_ms: Optional[int] = None
+    tap_ms: Optional[int] = None
+    tail_ms: Optional[int] = None
+
+
 class ServerApp:
     def __init__(
         self,
@@ -86,6 +97,10 @@ class ServerApp:
 
         self._activate_initial()
 
+        # PTT 自动按键：播放时自动按下游戏语音键
+        self.ptt = PttController(lambda: self.cfg.get("ptt") or {})
+        self._ptt_monitor_started = False
+
         self.app = FastAPI(title="CompanionDeck", version=__version__)
         self._setup_routes()
 
@@ -108,12 +123,54 @@ class ServerApp:
         if self.config_path is not None:
             save_config(self.cfg, self.config_path)
 
+    def _ptt_state(self) -> dict:
+        cfg = self.cfg.get("ptt") or {}
+        return {
+            "enabled": bool(cfg.get("enabled", False)),
+            "key": normalize_key(cfg.get("key")) or "V",
+            "mode": cfg.get("mode") if cfg.get("mode") in PTT_MODES else "hold",
+            "lead_ms": clamp_ms(cfg.get("lead_ms"), 150, *LEAD_RANGE),
+            "tap_ms": clamp_ms(cfg.get("tap_ms"), 60, *TAP_RANGE),
+            "tail_ms": clamp_ms(cfg.get("tail_ms"), 500, *TAIL_RANGE),
+            "holding": self.ptt.is_holding(),
+        }
+
+    def start_ptt_monitor(self, interval: float = 0.6) -> None:
+        """后台线程轮询播放状态：Soundpad 侧直接触发的播放也能自动按键。"""
+        import atexit
+        import threading
+        import time
+
+        if self._ptt_monitor_started:
+            return
+        self._ptt_monitor_started = True
+        atexit.register(self.ptt.shutdown)
+
+        def loop() -> None:
+            last = False
+            while True:
+                playing = False
+                active = self.registry.active
+                if active is not None:
+                    try:
+                        playing = active.get_playback().status == "playing"
+                    except Exception:  # noqa: BLE001
+                        playing = False
+                if playing != last:
+                    self.ptt.on_playback(playing)
+                    last = playing
+                time.sleep(interval)
+
+        threading.Thread(target=loop, name="ptt-monitor", daemon=True).start()
+
     # ---------- 状态聚合 ----------
     def _state(self) -> DeckState:
         state = DeckState(
             version=__version__,
             auth_enabled=bool(self._get_token()),
         )
+        state.ptt_enabled = bool((self.cfg.get("ptt") or {}).get("enabled", False))
+        state.ptt_holding = self.ptt.is_holding()
         for adapter in self.registry.all():
             try:
                 available = adapter.available()
@@ -317,6 +374,7 @@ class ServerApp:
             if sound is None:
                 raise HTTPException(status_code=404, detail="声音不存在")
             try:
+                self.ptt.before_play()  # 先按住语音键（含提前量）再触发播放
                 active.play_sound(sound)
             except Unsupported:
                 raise HTTPException(status_code=400, detail="该声音无法播放")
@@ -370,6 +428,7 @@ class ServerApp:
             if active is None or "categories" not in active.capabilities:
                 raise HTTPException(status_code=400, detail="当前适配器不支持分类")
             try:
+                self.ptt.before_play()
                 active.play_from_category(payload.category_index, payload.position_in_category)
             except Unsupported:
                 raise HTTPException(status_code=400, detail="不支持按分类播放")
@@ -384,6 +443,7 @@ class ServerApp:
             if active is None or "random" not in active.capabilities:
                 raise HTTPException(status_code=400, detail="当前适配器不支持随机播放")
             try:
+                self.ptt.before_play()
                 active.play_random()
             except Unsupported:
                 raise HTTPException(status_code=400, detail="不支持随机播放")
@@ -397,6 +457,7 @@ class ServerApp:
             if active is None or "random" not in active.capabilities:
                 raise HTTPException(status_code=400, detail="当前适配器不支持随机播放")
             try:
+                self.ptt.before_play()
                 active.play_random_from_category(payload.category_index)
             except Unsupported:
                 raise HTTPException(status_code=400, detail="不支持分类内随机播放")
@@ -437,6 +498,7 @@ class ServerApp:
             if active is None or "seek" not in active.capabilities:
                 raise HTTPException(status_code=400, detail="当前适配器不支持此操作")
             try:
+                self.ptt.before_play()
                 active.play_current_again()
             except Unsupported:
                 raise HTTPException(status_code=400, detail="不支持重新播放")
@@ -470,6 +532,49 @@ class ServerApp:
             from deck.update import check_latest
 
             return check_latest()
+
+        # ---------- PTT 自动按键 ----------
+        @app.get("/api/ptt")
+        def api_ptt_get(_=Depends(auth)) -> dict:
+            return self._ptt_state()
+
+        @app.post("/api/ptt")
+        def api_ptt_set(payload: PttSettings, _=Depends(auth)) -> dict:
+            if payload.key is not None and normalize_key(payload.key) is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"无法识别的按键「{payload.key}」（支持 A-Z、0-9、SPACE、ENTER、F1-F12 等）",
+                )
+            if payload.mode is not None and payload.mode not in PTT_MODES:
+                raise HTTPException(status_code=400, detail="mode 只能是 hold（长按）或 tap（点按）")
+            for field, rng in (("lead_ms", LEAD_RANGE), ("tap_ms", TAP_RANGE), ("tail_ms", TAIL_RANGE)):
+                value = getattr(payload, field)
+                if value is not None and not (rng[0] <= value <= rng[1]):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{field} 需在 {rng[0]}~{rng[1]} 毫秒之间",
+                    )
+            ptt = self.cfg.setdefault("ptt", {})
+            if payload.enabled is not None:
+                ptt["enabled"] = payload.enabled
+            if payload.key is not None:
+                ptt["key"] = normalize_key(payload.key)
+            if payload.mode is not None:
+                ptt["mode"] = payload.mode
+            for field in ("lead_ms", "tap_ms", "tail_ms"):
+                value = getattr(payload, field)
+                if value is not None:
+                    ptt[field] = value
+            self._persist()
+            if not self._ptt_state()["enabled"]:
+                self.ptt.release()  # 关闭时确保按键被松开
+            return self._ptt_state()
+
+        @app.post("/api/ptt/test")
+        def api_ptt_test(_=Depends(auth)) -> dict:
+            """设置页「试按一下」：短按一次当前配置的按键，免进游戏验证。"""
+            key = self.ptt.test_press()
+            return {"ok": True, "key": key}
 
         @app.websocket("/ws")
         async def ws_endpoint(websocket: WebSocket) -> None:

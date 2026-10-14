@@ -95,3 +95,6 @@ class DeckState(BaseModel):
     current_category_index: Optional[int] = None
     # 新增：当前选中分类名
     current_category_name: Optional[str] = None
+    # PTT 自动按键：是否启用 / 语音键是否正被按住
+    ptt_enabled: bool = False
+    ptt_holding: bool = False

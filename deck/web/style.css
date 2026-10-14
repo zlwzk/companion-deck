@@ -204,3 +204,48 @@ body {
   background: #fff; border-radius: 12px; padding: 12px; margin: 8px 0;
 }
 .qr-wrap svg { width: 220px; height: 220px; max-width: 100%; }
+
+/* 顶栏版本标签 */
+.ver-tag {
+  font-size: 11px; color: var(--muted);
+  background: var(--card-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 8px;
+}
+
+/* 设置弹窗 */
+.set-sec { text-align: left; margin-bottom: 16px; }
+.set-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.set-hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+.set-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px; font-size: 14px;
+}
+.set-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.set-key { flex-shrink: 0; color: var(--muted); font-size: 13px; width: 32px; }
+.set-input { flex: 1; margin-bottom: 0; text-transform: uppercase; }
+.btn-ghost {
+  background: var(--card-2); color: var(--text);
+  border: 1px solid var(--border); margin-top: 8px;
+}
+
+/* PTT 状态点：启用时常显，按住时高亮呼吸 */
+.dot.ptt {
+  background: var(--card-2); border: 1px solid var(--border);
+  width: 12px; height: 12px;
+}
+.dot.ptt.holding {
+  background: var(--accent); border-color: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: ptt-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes ptt-pulse {
+  from { box-shadow: 0 0 4px var(--accent-dim); }
+  to { box-shadow: 0 0 12px var(--accent); }
+}
+
+/* 设置页滑杆行 */
+.set-key2 { flex-shrink: 0; color: var(--muted); font-size: 13px; width: 56px; }
+.set-val {
+  flex-shrink: 0; width: 52px; text-align: right;
+  font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums;
+}

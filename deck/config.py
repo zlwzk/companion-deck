@@ -29,6 +29,15 @@ DEFAULTS: dict = {
         "tray": True,           # 启动时创建系统托盘
         "autostart": False,     # 是否设置开机自启（用 --autostart on 切换）
     },
+    "ptt": {
+        # 播放声音时自动按下游戏语音键（按键说话）
+        "enabled": False,
+        "key": "V",             # 单字符 A-Z/0-9 或命名键（SPACE/ENTER/F1-F12 等）
+        "mode": "hold",         # hold=播放期间长按；tap=播放时点按一下
+        "lead_ms": 150,         # 按键先于播放的提前量 0~500ms（给游戏语音通道建立时间）
+        "tap_ms": 60,           # tap 模式的按键时长 0~500ms
+        "tail_ms": 500,         # hold 模式声音结束后多按 300~1000ms 再松开（盖住收尾截断）
+    },
     "adapters": {
         "soundpad": {
             "enabled": True,
