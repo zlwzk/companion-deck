@@ -532,10 +532,26 @@
     token = t;
     localStorage.setItem(TOKEN_KEY, t);
     hideTokenModal();
+    loadVersion();
     refresh().then(connectWs);
   });
 
+  /* ---------- 版本信息 ---------- */
+  function loadVersion() {
+    api("/api/version").then(function (v) {
+      if (v.current) $("verNow").textContent = "v" + v.current;
+      var el = $("verNew");
+      if (!el) return;
+      if (v.update_available && v.latest) {
+        el.innerHTML = ' · <a href="' + (v.url || "#") + '" target="_blank" rel="noopener" style="color:#4ade80">🎉 有新版本 v' + v.latest + "</a>";
+      } else if (v.checked && v.latest) {
+        el.textContent = " · 已是最新";
+      }
+    }).catch(function () { /* 离线时静默 */ });
+  }
+
   /* ---------- 启动 ---------- */
   bindActions();
+  loadVersion();
   refresh().then(connectWs);
 })();

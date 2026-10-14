@@ -464,6 +464,13 @@ class ServerApp:
         def api_tray_supported() -> dict:
             return {"supported": tray_supported()}
 
+        @app.get("/api/version")
+        def api_version(_=Depends(auth)) -> dict:
+            """当前版本 + GitHub 最新 Release 检查（带缓存，失败静默降级）。"""
+            from deck.update import check_latest
+
+            return check_latest()
+
         @app.websocket("/ws")
         async def ws_endpoint(websocket: WebSocket) -> None:
             expected = self._get_token()

@@ -133,14 +133,15 @@ def main() -> None:
     interactive = sys.stdin.isatty()
 
     def _try_auto_bridge() -> None:
-        """智能模式：检测到已授权手机则自动桥接。"""
+        """智能模式：adb 可用时自动桥接（带重试，覆盖手机刚插上枚举慢的情况）。"""
         nonlocal usb_ok, usb_msg, focus
         import deck.adb as _adb
-        if _adb.adb_path() and _adb.devices():
-            usb_ok, usb_msg = _adb.reverse(port)
-            if usb_ok:
-                _add_usb_channel()
-                focus = "USB 直连"
+        if not _adb.adb_path():
+            return
+        usb_ok, usb_msg = _adb.reverse_with_retry(port, attempts=3, delay=1.5)
+        if usb_ok:
+            _add_usb_channel()
+            focus = "USB 直连"
 
     if args.usb:
         from deck.wizard import run_usb_wizard

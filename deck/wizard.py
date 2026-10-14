@@ -100,26 +100,31 @@ def run_usb_wizard(port: int, interactive: bool = True) -> tuple[bool, str]:
             print(" 手机待授权")
             print("      → 手机上正在弹「允许 USB 调试吗？」：勾选「一律允许」再点「允许」")
         elif "offline" in states:
-            print(" 设备离线")
-            print("      → 手机屏幕解锁后重新插拔一次数据线")
+            print(" 设备离线，正在自动重连 ...")
+            adb.reconnect()
         else:
             print(" 未检测到")
             if attempt == 1:
                 _print_usb_plug_steps()
+                print("      ⑤ 若确认已插线、已开 USB 调试仍检测不到：输入 r 一键修复驱动识别")
         if not interactive or attempt == _MAX_RETRY:
-            return False, "手机未就绪（未插线 / 未开 USB 调试 / 未授权）"
+            return False, "手机未就绪（未插线 / 未开 USB 调试 / 未授权；可重启动程序后选 USB 再试，或输入 r 修复驱动）"
         try:
-            ans = input(f"           处理好后按回车重试（{_MAX_RETRY - attempt} 次机会），输入 s 跳过 USB 直连: ").strip().lower()
+            ans = input(f"           回车重试（剩 {_MAX_RETRY - attempt} 次）/ r 修复驱动识别 / s 跳过: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             return False, "已跳过 USB 直连"
         if ans == "s":
             return False, "已跳过 USB 直连"
+        if ans == "r":
+            print("           即将弹出管理员授权窗口（用于修复 adb 驱动识别），请点「是」…")
+            ok_r, msg_r = adb.repair_recognition()
+            print(f"           {'✔' if ok_r else '✘'} {msg_r}")
     else:  # pragma: no cover - for 循环必然 break 或 return
         return False, "手机未就绪"
 
-    # ---- 步骤 3/3：建立反向转发 ----
+    # ---- 步骤 3/3：建立反向转发（带重试，等待授权后枚举稳定） ----
     print(f"  [USB 3/3] 建立反向转发 (adb reverse tcp:{port}) ...", end="")
-    ok, msg = adb.reverse(port)
+    ok, msg = adb.reverse_with_retry(port)
     print(" ✔" if ok else f" ✘（{msg}）")
     return ok, msg
 

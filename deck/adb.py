@@ -13,10 +13,12 @@ adb 本体来自 Google platform-tools：
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -87,6 +89,89 @@ def install_adb() -> tuple[bool, str]:
         except OSError:
             pass
     return True, f"adb 已安装到 {dest}"
+
+
+def restart_server() -> None:
+    """重启 adb 守护进程，清除陈旧的设备枚举（插拔后列表不刷新时使用）。"""
+    adb = adb_path()
+    if not adb:
+        return
+    try:
+        _run([adb, "kill-server"], timeout=5.0)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def reconnect() -> None:
+    """`adb reconnect offline`：尝试恢复 offline 状态的设备。"""
+    adb = adb_path()
+    if not adb:
+        return
+    try:
+        _run([adb, "reconnect", "offline"], timeout=5.0)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def reverse_with_retry(port: int, attempts: int = 3, delay: float = 1.5) -> tuple[bool, str]:
+    """带重试的反向转发：手机刚插上时 adb 枚举有延迟，offline 时自动 reconnect。"""
+    msg = "未检测到 USB 设备"
+    for i in range(max(1, attempts)):
+        ok, msg = reverse(port)
+        if ok:
+            return ok, msg
+        if i < attempts - 1:
+            if any(state == "offline" for _, state in devices_status()):
+                reconnect()
+            time.sleep(delay)
+    return False, msg
+
+
+# adb 的 Windows 后端只枚举注册表中带此接口 GUID 的设备；荣耀/华为等机型
+# 被 Windows 自动绑定裸 WinUSB 驱动时缺少该值，表现为「adb devices 看不到手机」。
+_ADB_IFACE_GUID = "{F72FE0D4-CBCB-407d-8814-9ED673D0DD6B}"
+
+
+def repair_recognition() -> tuple[bool, str]:
+    """一键修复「手机已插线、已开 USB 调试，但 adb 看不到」。
+
+    给所有 ADB Interface 设备节点的注册表补写 DeviceInterfaceGUIDs 并重启节点
+    （等效安装 Google USB 驱动的核心效果）。会弹出 UAC 管理员授权窗口；
+    修复对设备节点持久生效，但同一手机换插**另一个 USB 口**会生成新节点，
+    需重新修复。仅 Windows 有效。
+    """
+    if sys.platform != "win32":
+        return False, "仅 Windows 需要此修复"
+    script = (
+        "$devs = Get-PnpDevice -PresentOnly | Where-Object { $_.FriendlyName -like '*ADB Interface*' };"
+        "if (-not $devs) { exit 3 };"
+        "foreach ($d in $devs) {"
+        "  $key = \"HKLM:\\SYSTEM\\CurrentControlSet\\Enum\\$($d.InstanceId)\\Device Parameters\";"
+        "  New-Item -Path $key -Force | Out-Null;"
+        f"  New-ItemProperty -Path $key -Name DeviceInterfaceGUIDs -PropertyType MultiString -Value @('{_ADB_IFACE_GUID}') -Force | Out-Null;"
+        "  pnputil /restart-device \"$($d.InstanceId)\" | Out-Null"
+        "};"
+        "exit 0"
+    )
+    enc = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    cmd = (
+        "$p = Start-Process powershell -Verb RunAs -Wait -PassThru -WindowStyle Hidden "
+        f"-ArgumentList '-NoProfile','-EncodedCommand','{enc}'; exit $p.ExitCode"
+    )
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", cmd],
+            capture_output=True, text=True, timeout=180, creationflags=_NO_WINDOW,
+        )
+    except Exception as e:  # noqa: BLE001
+        return False, f"修复流程执行失败：{e}"
+    if proc.returncode == 3:
+        return False, "未找到 ADB Interface 设备（请确认手机已插线并开启 USB 调试）"
+    if proc.returncode != 0:
+        return False, "已取消管理员授权，未执行修复"
+    time.sleep(2)  # 等待节点重启完成
+    restart_server()
+    return True, "已修复驱动识别并重启 adb（下次插这个 USB 口免修复）"
 
 
 def devices_status() -> list[tuple[str, str]]:

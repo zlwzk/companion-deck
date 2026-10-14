@@ -169,6 +169,78 @@ class TestUsbWizard:
         assert "跳过" in msg
 
 
+    def test_repair_option(self, monkeypatch):
+        """输入 r 触发驱动修复，修复成功后重试检测到设备。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        states = iter([[], [("S1", "device")]])
+        monkeypatch.setattr(adb, "devices_status", lambda: next(states))
+        answers = iter(["r"])
+        monkeypatch.setattr(builtins, "input", lambda prompt="": next(answers))
+        repairs = []
+        monkeypatch.setattr(
+            adb, "repair_recognition",
+            lambda: (repairs.append(1), (True, "已修复"))[1]
+        )
+        monkeypatch.setattr(adb, "reverse_with_retry", lambda port: (True, "已桥接"))
+        ok, _ = wizard.run_usb_wizard(8390, interactive=True)
+        assert ok is True
+        assert len(repairs) == 1
+
+    def test_offline_auto_reconnect(self, monkeypatch):
+        """offline 状态自动触发 reconnect。"""
+        monkeypatch.setattr(adb, "adb_path", lambda: "adb")
+        states = iter([[("S1", "offline")], [("S1", "device")]])
+        monkeypatch.setattr(adb, "devices_status", lambda: next(states))
+        calls = []
+        monkeypatch.setattr(adb, "reconnect", lambda: calls.append(1))
+        answers = iter([""])
+        monkeypatch.setattr(builtins, "input", lambda prompt="": next(answers))
+        monkeypatch.setattr(adb, "reverse_with_retry", lambda port: (True, "已桥接"))
+        ok, _ = wizard.run_usb_wizard(8390, interactive=True)
+        assert ok is True
+        assert len(calls) == 1
+
+
+# ---------- adb 重试逻辑 ----------
+
+class TestReverseWithRetry:
+    def test_first_attempt_success(self, monkeypatch):
+        monkeypatch.setattr(adb, "reverse", lambda port: (True, "ok"))
+        ok, msg = adb.reverse_with_retry(8390)
+        assert ok is True
+
+    def test_success_on_third(self, monkeypatch):
+        results = iter([(False, "no device"), (False, "no device"), (True, "ok")])
+        monkeypatch.setattr(adb, "reverse", lambda port: next(results))
+        monkeypatch.setattr(adb, "devices_status", lambda: [])
+        monkeypatch.setattr(adb.time, "sleep", lambda s: None)
+        ok, _ = adb.reverse_with_retry(8390, attempts=3)
+        assert ok is True
+
+    def test_all_fail(self, monkeypatch):
+        monkeypatch.setattr(adb, "reverse", lambda port: (False, "no device"))
+        monkeypatch.setattr(adb, "devices_status", lambda: [])
+        monkeypatch.setattr(adb.time, "sleep", lambda s: None)
+        ok, msg = adb.reverse_with_retry(8390, attempts=3)
+        assert ok is False
+        assert "no device" in msg
+
+    def test_offline_triggers_reconnect(self, monkeypatch):
+        monkeypatch.setattr(adb, "reverse", lambda port: (False, "offline"))
+        monkeypatch.setattr(adb, "devices_status", lambda: [("S1", "offline")])
+        monkeypatch.setattr(adb.time, "sleep", lambda s: None)
+        calls = []
+        monkeypatch.setattr(adb, "reconnect", lambda: calls.append(1))
+        adb.reverse_with_retry(8390, attempts=3)
+        assert len(calls) == 2  # 前两次失败各触发一次
+
+    def test_repair_non_windows(self, monkeypatch):
+        monkeypatch.setattr(adb.sys, "platform", "linux")
+        ok, msg = adb.repair_recognition()
+        assert ok is False
+        assert "Windows" in msg
+
+
 # ---------- 通道操作提示 ----------
 
 class TestChannelSteps:
